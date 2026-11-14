@@ -4278,23 +4278,13 @@ setInterval(ajusta,500);ajusta();
 <style id="regalo-nombre">
 .ev .eb{white-space:nowrap;max-width:170px;overflow:hidden;text-overflow:ellipsis}</style>
 
-<!-- ===== COPAS: el 2° puesto un poco mas chico que el 1°, y cada tarjeta dice PRIMER PUESTO / SEGUNDO PUESTO. ===== -->
+<!-- ===== COPAS: primer y segundo puesto con tarjetas del mismo tamaño; cada una identifica su puesto. ===== -->
 <style id="copas-v32">
-#copas.cp2 .cc.p1{flex:1.5 1 0}
-#copas.cp2 .cc.p2{flex:.8 1 0;padding:3px 3px 2px;gap:1px}
+#copas.cp2 .cc.p1,#copas.cp2 .cc.p2{flex:1 1 0;padding:9px 3px 4px;gap:3px}
 #copas.cp2 .cc-lb{order:-1;flex:none;max-width:100%;box-sizing:border-box;padding:2px 6px;border-radius:7px;background:#ffe14d;color:#3a2300;font:900 7.5px/1 Inter,sans-serif;letter-spacing:.1px;white-space:nowrap;overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,.5)}
 #copas.cp2 .cc.r2 .cc-lb{background:#d7dbe2;color:#1d1d22}
-#copas.cp2 .cc.p2 .cc-lb{font-size:7px;padding:2px 3px}
-#copas.cp2 .cc.p2 .cc-fl,#copas.cp2 .cc.p2 .cc-fl svg{width:22px;height:22px}
-#copas.cp2 .cc.p2 .cc-n{font-size:19px}
-#copas.cp2 .cc.p2 .cc-nm{font-size:10px}
-#copas.cp2 .cc.p2 .cc-bar{height:5px}
-#copas.cp2 .cc.p2 .cc-st{font-size:8.5px}
-#copas.cp2 .cc.p2 .cc-rk{font-size:15px;top:-7px}
-#copas.cp2 .cc.p2 .cc-cr{font-size:16px;top:-6px}
 /* numeros de 2 y 3 cifras mas chicos para que no se salgan; punto verde abajo a la derecha; corona arriba a la derecha */
 #copas.cp2 .cc-n.d2{font-size:26px}#copas.cp2 .cc-n.d3{font-size:18px}
-#copas.cp2 .cc.p2 .cc-n.d2{font-size:21px}#copas.cp2 .cc.p2 .cc-n.d3{font-size:16px}
 #copas.cp2 .cc-live{top:-4px;bottom:auto;right:26px}
 #copas.cp2 .cc-cr,#copas.cp2 .cc.p2 .cc-cr{left:auto;right:-5px;top:-13px;font-size:24px;transform:rotate(14deg);animation:ccBob2 1.6s ease-in-out infinite}
 @keyframes ccBob2{50%{transform:rotate(14deg) translateY(-3px)}}</style>
@@ -5264,8 +5254,6 @@ window.gamiVS={data:D,advance,curVS};
 #copas .cc-fans svg{flex:none;width:19px;height:13px;fill:currentColor;filter:drop-shadow(0 1px 1px rgba(0,0,0,.7))}
 #copas .cc-fans.top{color:#ffe14d}
 #copas .cc-fans.top:after{content:"▲";font-size:8px;margin-left:1px}
-#copas .cc.p2 .cc-fans{font-size:10px}
-#copas .cc.p2 .cc-fans svg{width:15px;height:10px}
 </style>
 <script id="fans-copas-js">
 (function(){
