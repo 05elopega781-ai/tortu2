@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { comboDelta, identifyCountry, normalizeTikTokEvent, normalizeUsername } from './server.js';
 
 test('username normalization strips leading @ and whitespace', () => {
@@ -46,4 +47,25 @@ test('country recognition accepts names and ISO codes', () => {
   assert.equal(identifyCountry('Vamos Paraguay')?.code, 'PY');
   assert.equal(identifyCountry('🇨🇱 Chile')?.code, 'CL');
   assert.equal(identifyCountry('🇬🇧')?.code, 'GB');
+});
+
+test('PWA manifest is named tortu2 and requests fullscreen with install icons', () => {
+  const manifest = JSON.parse(readFileSync(new URL('./public/manifest.webmanifest', import.meta.url), 'utf8'));
+  assert.equal(manifest.name, 'tortu2');
+  assert.equal(manifest.short_name, 'tortu2');
+  assert.equal(manifest.display, 'fullscreen');
+  assert.deepEqual(manifest.icons.filter(icon => icon.type === 'image/png').map(icon => icon.sizes), ['192x192', '512x512']);
+  for (const size of [192, 512]) {
+    const icon = readFileSync(new URL(`./public/icons/tortu2-${size}.png`, import.meta.url));
+    assert.equal(icon.toString('hex', 0, 8), '89504e470d0a1a0a');
+    assert.equal(icon.readUInt32BE(16), size);
+    assert.equal(icon.readUInt32BE(20), size);
+  }
+});
+
+test('service worker caches only the shell and bypasses live API responses', () => {
+  const worker = readFileSync(new URL('./public/sw.js', import.meta.url), 'utf8');
+  assert.match(worker, /request\.mode === 'navigate'/);
+  assert.match(worker, /url\.pathname\.startsWith\('\/api\/'\)/);
+  assert.match(worker, /tortu2-shell-/);
 });

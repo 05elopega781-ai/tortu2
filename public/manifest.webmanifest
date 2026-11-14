@@ -1,9 +1,42 @@
 {
-  "name": "TortuWorld",
-  "short_name": "TortuWorld",
+  "id": "/",
+  "name": "tortu2",
+  "short_name": "tortu2",
+  "description": "Overlay de carreras TortuWorld.",
   "start_url": "/",
-  "display": "standalone",
-  "background_color": "#140b04",
-  "theme_color": "#140b04",
-  "lang": "es"
+  "scope": "/",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone", "minimal-ui"],
+  "orientation": "portrait",
+  "background_color": "#07262B",
+  "theme_color": "#07262B",
+  "lang": "es",
+  "categories": ["games", "entertainment"],
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "/icons/tortu2-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/tortu2-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/tortu2-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/tortu2-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
 }

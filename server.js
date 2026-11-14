@@ -606,6 +606,7 @@ function contentType(path) {
     '.js': 'application/javascript; charset=utf-8',
     '.webmanifest': 'application/manifest+json; charset=utf-8',
     '.json': 'application/json; charset=utf-8',
+    '.png': 'image/png',
     '.svg': 'image/svg+xml'
   })[extname(path)] || 'application/octet-stream';
 }
@@ -676,6 +677,10 @@ async function handle(req, res) {
   if (path === '/manifest.webmanifest' || path === '/sw.js' || path === '/activity-policy.js') {
     const filename = path === '/activity-policy.js' ? 'activity-policy.js' : path.slice(1);
     await serveFile(req, res, resolve(PUBLIC_DIR, filename));
+    return;
+  }
+  if (/^\/icons\/tortu2-(?:192|512)\.(?:png|svg)$/.test(path) && (req.method === 'GET' || req.method === 'HEAD')) {
+    await serveFile(req, res, resolve(PUBLIC_DIR, path.slice(1)));
     return;
   }
   if (path === '/api/events' && req.method === 'GET') {

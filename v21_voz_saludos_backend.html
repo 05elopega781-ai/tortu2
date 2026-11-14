@@ -48,6 +48,7 @@
   GET    /api/admin/country-stats           conteos por pais (admin).
   GET    /activity-policy.js               script con la politica de taps (TAP_POLICY). [REVISAR: el comentario viejo decia /api/activity-policy.js]
   GET    /manifest.webmanifest y /sw.js    instalar como app.
+  GET    /icons/tortu2-{192,512}.{png,svg} iconos de instalacion de la PWA tortu2.
   GET    /backend                          panel del backend (boton del overlay).
 
  DETALLE DE LAS RUTAS QUE NO ESTAN EN LAS OTRAS PARTES
@@ -259,6 +260,9 @@
     comentarios se atribuyen al primer alias reconocido, de lo contrario a "sin pais". POST /api/country/cup acepta {countryCode}
     solo para esos codigos.
   - Voz y politica: /api/voice-priority y /activity-policy.js devuelven las tablas/funciones que usa el HTML.
+  - PWA: el nombre instalable es tortu2, el manifiesto declara display fullscreen con fallback standalone y orientacion portrait,
+    e incluye iconos PNG de 192 y 512 px. El service worker guarda el shell para abrirlo sin conexion, actualiza navegaciones por red
+    y excluye /api/*, /backend y los eventos SSE de la cache. La instalacion requiere HTTPS o localhost.
   - Firma: SHA-256 de 16 hexadecimales del HTML fuente; la firma se sustituye en el meta al servir / y es igual a la respuesta JSON.
   - Herramientas: /api/game-tools/events emite primero ajustes y estado. POST /api/game-tools/overlay-heartbeat recibe
     {clientId,visible}; la presencia expira a los 90 s y se revisa cada 15 s. Un regalo aumenta el contador; reset vuelve a cero
@@ -366,7 +370,7 @@ let deploymentCheckPromise=null;
 async function clearClussOverlayCache(){
  if(!('caches' in window))return;
  const keys=await caches.keys();
- await Promise.all(keys.filter(key=>key.startsWith('tortu-shell-')).map(key=>caches.delete(key)));
+ await Promise.all(keys.filter(key=>key.startsWith('tortu2-shell-')||key.startsWith('tortu-shell-')).map(key=>caches.delete(key)));
 }
 window.checkClussDeploymentVersion=()=>{
  if(deploymentCheckPromise)return deploymentCheckPromise;
@@ -396,12 +400,15 @@ window.checkClussDeploymentVersion();
 </script>
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#07262B">
+<meta name="application-name" content="tortu2">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="TortuWorld">
-<title>TortuWorld</title>
+<meta name="apple-mobile-web-app-title" content="tortu2">
+<title>tortu2</title>
 <link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icons/tortu2-192.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" sizes="192x192" href="/icons/tortu2-192.png">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@500;700;800&display=swap">
 <!-- NOTA CSS: las reglas estan en CAPAS. Las que van mas abajo sobrescriben a las de arriba (se fueron agregando por version); la ultima manda. Tocar siempre la capa final. -->
 <style>
@@ -2513,7 +2520,7 @@ A.init();hud();update();
 <script>
 /* Service worker: permite instalar el overlay como app (requiere /sw.js en el backend) */
 if ('serviceWorker' in navigator)
- window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js')
+ window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js',{scope:'/',updateViaCache:'none'})
   .catch(error=>console.error('No se pudo registrar tortu como aplicación:',error)));
 </script>
 <script>

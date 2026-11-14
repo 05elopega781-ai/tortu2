@@ -46,6 +46,7 @@
   GET    /api/admin/country-stats           conteos por pais (admin).
   GET    /activity-policy.js               script con la politica de taps (TAP_POLICY). [REVISAR: el comentario viejo decia /api/activity-policy.js]
   GET    /manifest.webmanifest y /sw.js    instalar como app.
+  GET    /icons/tortu2-{192,512}.{png,svg} iconos de instalacion de la PWA tortu2.
   GET    /backend                          panel del backend (boton del overlay).
 
  DETALLE DE LAS RUTAS QUE NO ESTAN EN LAS OTRAS PARTES
@@ -257,6 +258,9 @@
     comentarios se atribuyen al primer alias reconocido, de lo contrario a "sin pais". POST /api/country/cup acepta {countryCode}
     solo para esos codigos.
   - Voz y politica: /api/voice-priority y /activity-policy.js devuelven las tablas/funciones que usa el HTML.
+  - PWA: el nombre instalable es tortu2, el manifiesto declara display fullscreen con fallback standalone y orientacion portrait,
+    e incluye iconos PNG de 192 y 512 px. El service worker guarda el shell para abrirlo sin conexion, actualiza navegaciones por red
+    y excluye /api/*, /backend y los eventos SSE de la cache. La instalacion requiere HTTPS o localhost.
   - Firma: SHA-256 de 16 hexadecimales del HTML fuente; la firma se sustituye en el meta al servir / y es igual a la respuesta JSON.
   - Herramientas: /api/game-tools/events emite primero ajustes y estado. POST /api/game-tools/overlay-heartbeat recibe
     {clientId,visible}; la presencia expira a los 90 s y se revisa cada 15 s. Un regalo aumenta el contador; reset vuelve a cero
