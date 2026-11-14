@@ -1,0 +1,9 @@
+{
+  "name": "TortuWorld",
+  "short_name": "TortuWorld",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#140b04",
+  "theme_color": "#140b04",
+  "lang": "es"
+}
