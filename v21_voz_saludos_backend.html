@@ -71,7 +71,7 @@
   F2  CONEXION: conectar al cargar el overlay o al pedir reconexion. Cada intento espera hasta 10 s.
   F3  REINTENTOS: cada 5 s durante un maximo de 5 min; despues queda 'failed' hasta reiniciar el ciclo.
   F4  POST /api/reconnect: inicia/reintenta la conexion. 200 = ok, 409 = ya conectado (tambien ok).
-  F5  ESCUCHAR EVENTOS DE TIKTOK y normalizarlos a un formato unico (type, username, content, activityCount, giftName, profilePictureUrl).
+  F5  ESCUCHAR EVENTOS DE TIKTOK y normalizarlos a un formato unico (type, username, content, activityCount, giftName, giftDiamonds, profilePictureUrl).
   F6  FILTRAR: enviar SOLO member, chat, gift, like, follow y share. Descartar todo lo demas. Nunca enviar el campo 'bot'.
   F7  DEDUPLICAR por IDs de origen recientes (no enviar dos veces el mismo evento).
   F8  COMBOS DE REGALOS: calcular el delta de cada combo para no contar repetidos. Conservar tal cual los activityCount de regalos y likes.
@@ -158,6 +158,7 @@
           content         texto del comentario (solo chat). El frontend detecta el equipo en el texto.
           activityCount   cantidad de likes o de regalos de ese evento (entero >= 1)
           giftName        nombre del regalo (tambien se leen gift_name / gift / giftId)
+          giftDiamonds    diamantes totales del regalo/combo; la alerta alegre suena desde 1 diamante.
           profilePictureUrl  foto https del usuario (tambien se leen profilePicture / avatarUrl / avatar / userImage / imageUrl)
           bot             NUNCA lo envia el backend. Solo lo usa el frontend para sus eventos automaticos.
   POST /api/reconnect       inicia/reintenta la conexion con TikTok. 200 = ok, 409 = ya conectado (tambien ok). Otro error: JSON {"message":"..."}.
@@ -221,10 +222,10 @@
  El frontend habla por una cola de prioridad (capa voz-prioridad-js, al final del HTML). La tabla puede venir del backend: GET /api/voice-priority.
   Forma:  {"trackMeters":100,"levels":[{id,priority,ttlMs,max,interrupt?,say,coalesceMs?,everyMs?,quietMs?,maxChars?}, ...]}   (menor priority = habla primero)
   Niveles por defecto del frontend:
-   move     priority 0  MAXIMA. Hincha que nombra un club o cambia de equipo. ttl 20 s, max 8 en cola, corta lo de menor prioridad.
-   gift     priority 1  agradecer regalo. ttl 15 s, max 5, corta lo de menor prioridad.
+   gift     priority 0  MAXIMA. Agradece cada regalo y dispara una alerta alegre desde 1 diamante; no expira ni descarta regalos.
+   move     priority 1  Hincha que nombra un club o cambia de equipo. ttl 20 s, max 8 en cola.
    chat     priority 2  leer comentario. ttl 20 s, max 3, maxChars 140.
-   welcome  priority 2  saludo al hincha que ingresa (evento member). ttl 25 s, max 6. Una vez por usuario; de nuevo si reingresa pasados 10 min.
+   welcome  priority 3  saludo al hincha que ingresa (evento member). ttl 25 s, max 6. Una vez por usuario; de nuevo si reingresa pasados 10 min.
    action   priority 3  likes (se agrupan 8 s), seguir, compartir. ttl 12 s, max 3.
    match    priority 4  como va el partido, en METROS (meta = trackMeters = 100). Cada 14 s si hay silencio.
   Si el backend devuelve una tabla sin 'move' o sin 'welcome', el frontend agrega los suyos por defecto. Si el endpoint falla, usa la tabla por defecto.
@@ -289,7 +290,7 @@ Las reglas marcadas (propuesto) aun no estan confirmadas por el autor. [REVISAR]
 
 1. REGLA PERMANENTE (TikTok ya sanciono al autor)
  - Ningun cuadro emergente, aviso, banner ni voz en off pide acciones a los espectadores (comentar, seguir, compartir, tocar/apoyar o enviar regalos). Solo informa o reacciona a eventos REALES.
- - El overlay no muestra ni solicita regalos, capibaras ni perfumes. Los regalos reales avanzan la carrera en silencio.
+ - El overlay no muestra ni solicita regalos, capibaras ni perfumes. Los regalos reales avanzan la carrera sin sumar taps; desde 1 diamante disparan una alerta alegre.
  - Los hitos 25%, 50% y 75% y los banners (remontada, carrera pareja, foto finish) muestran solo el estado de la pista.
 
 2. FORMATO DEL DUELO / TORNEO LIBRE (vigente)
@@ -350,10 +351,10 @@ Las reglas marcadas (propuesto) aun no estan confirmadas por el autor. [REVISAR]
  14. ESFUERZO DE LA TORTUGA (v15, capa SOLO visual; id tortu-esfuerzo, al final): mientras carga la barra del limite de taps, cada tap/like/seguir/compartir REAL hace que las patas y el caparazon de la tortuga del equipo trabajen mas (4 fases segun el llenado; fase 4 con brillo y fuego, tambien durante el turbo) y suelta polvo; un comentario real da un empujon y un globito. Se apaga 1,8 s despues del ultimo evento. No cambia limites ni puntos; nunca pide acciones (regla 1).
  15. AVISOS DE MAXIMO 3 s (v16, id aviso-cuenta, al final): ninguna ventana emergente (banner, aviso, tarjeta de regalo, logro, hype) dura mas de 3 s y todas muestran un contador regresivo en segundos (3, 2, 1) en su esquina. La tarjeta de regalo dura 2,6 s (+0,4 s de salida). Solo informa; nunca pide acciones (regla 1).
  16. RECTA FINAL SIN VENTANAS (v17, id recta-final-js, al final): desde que la tortuga lider pasa RF=70 % de pista, ninguna ventana emergente (banner, aviso, regalo, logro, hype) se muestra, para ver la pista completa; quedan en espera (maximo 3, las mas recientes) y se muestran una a una DESPUES, al llegar a la meta (fin de ronda). Al empezar una ronda nueva lo pendiente se descarta. Solo informa; nunca pide acciones (regla 1).
- 17. VOZ POR PRIORIDAD Y METROS (v18, id voz-prioridad-js, al final): se corta TODA la voz en off anterior (SpeechSynthesis.speak solo deja pasar la cola nueva). Cola: 1 agradecer regalo (corta lo de menor prioridad), 2 leer comentario, 3 leer accion del usuario y agradecer (likes agrupados 8 s), 4 describir como va el partido. Tabla en el backend: server/voice-priority.js -> GET /api/voice-priority (el frontend trae una copia por defecto). La pista se mide en METROS: la meta esta a 100 m (1 punto de pista = 1 m); los textos con % pasan a m. Nunca pide acciones (regla 1).
+ 17. VOZ POR PRIORIDAD Y METROS (v18, id voz-prioridad-js, al final): orden: 1 agradecer cada regalo y alerta alegre desde 1 diamante; 2 anunciar cambios de equipo; 3 leer comentarios; 4 agradecer acciones/saludar; 5 narrar el avance y lo que falta para la meta. Tabla: server/voice-priority.js -> GET /api/voice-priority. La pista se mide en METROS: la meta esta a 100 m (1 punto de pista = 1 m). Nunca pide acciones (regla 1).
  18. VS EN BUCLE + LISTA EN EL BACK + ESTADISTICAS POR VS (v19, ids vs-motor / vs-motor-js, al final): cada VS se repite (serie tras serie) mientras haya interaccion; cuando la cuenta regresiva de inactividad llega a 0 se salta al SIGUIENTE VS HABILITADO de la lista (al terminar la lista vuelve al clasico). La lista (habilitar/deshabilitar) y las estadisticas viven en el servidor: clave cluss.vs (ver tabla de claves). Valor por evento real: miembro 1, comentario 5, like 1 c/u, seguir 3, compartir 3, regalo 10; ranking = valor por ronda. Historial 'sin eventos' = VS jugados sin ningun evento (no entran los que tienen copas). Copas por VS = suma de P.cl. Boton 🆚 abre el panel (Lista / Interaccion / Sin eventos / Copas). Los bots no cuentan. Nunca pide acciones (regla 1).
  19. FANS ACTIVOS BAJO CADA COPA (v20, ids fans-copas / fans-copas-js, al final): en el cuadro de copas (#copas) cada tarjeta de club muestra, debajo del numero de copas, un icono de hinchas y la cantidad de fans activos; el club con mas fans (si hay lider claro) se resalta con ▲. Fan activo = usuario REAL con una interaccion (comentario, like, regalo, seguir, compartir; 'member' no cuenta) para ese club en los ultimos FAN_ACTIVE_MS (30 min). Se guarda en el servidor como huellas con sal en cluss.fans (sin nombres). Solo informa; nunca pide acciones (regla 1).
- 20. VOZ: CAMBIO DE EQUIPO Y SALUDO AL INGRESAR (v21, dentro de voz-prioridad-js): nivel 'move' = prioridad 0, MAXIMA (por encima del agradecimiento de regalos): un hincha que nombra un club ('se une a X') o cambia de uno ('cambio de X a Y') se anuncia en cola, uno tras otro (FIFO, maximo 8), y corta lo que hable de menor prioridad. Nivel 'welcome' = saludo 'Bienvenido <usuario>' a cada evento 'member' (una vez; de nuevo si reingresa tras 10 min; maximo 6 en cola). Si el backend (GET /api/voice-priority) no trae esos niveles, el frontend agrega los suyos por defecto. Nunca pide acciones (regla 1).
+ 20. VOZ: CAMBIO DE EQUIPO Y SALUDO AL INGRESAR (v21, dentro de voz-prioridad-js): nivel 'move' = prioridad 1: un hincha que nombra un club ('se une a X') o cambia de uno ('cambio de X a Y') se anuncia en cola (FIFO, maximo 8). Nivel 'welcome' = prioridad 3, saludo 'Bienvenido <usuario>' a cada evento 'member' (una vez; de nuevo si reingresa tras 10 min; maximo 6 en cola). Si el backend (GET /api/voice-priority) no trae esos niveles, el frontend agrega los suyos por defecto. Nunca pide acciones (regla 1).
 11. CONTRATO CON EL BACKEND, REGLAS DE JUEGO Y CHECKLIST DE FUNCIONES: movidos al 'BLOQUE PARA EL DESARROLLADOR DEL BACKEND' (al inicio de este archivo; el desarrollador lo copia a su repo y lo borra de aqui al leerlo).
 
 12. ESPECIFICACIONES NO IMPLEMENTADAS (propuestas de la version original por paises; el Torneo libre de la regla 2 las reemplaza)
@@ -5004,7 +5005,7 @@ setInterval(()=>{
 window.gamiRectaFinal={RF,queue:D};
 })();
 </script>
-<!-- ===== v18: VOZ POR COLA DE PRIORIDAD. Se corta TODA la voz en off anterior (Don Tortu y lector de chat) y habla solo esta cola: 1 agradecer regalo, 2 leer comentario, 3 leer accion y agradecer, 4 describir como va el partido (en METROS, meta a 100 m). La tabla viene del backend: GET /api/voice-priority (server/voice-priority.js). Nunca pide acciones (regla 1). ===== -->
+<!-- ===== VOZ POR COLA DE PRIORIDAD. Orden: regalo y alerta alegre, cambio de equipo, comentario, accion/saludo, avance de carrera. Tabla: GET /api/voice-priority. ===== -->
 <script id="voz-prioridad-js">
 (function(){
 'use strict';
@@ -5019,12 +5020,12 @@ SS.speak=function(u){
 };
 /* 2) Tabla de prioridad (valor por defecto = la del backend) */
 const DEF_LEVELS=[
- {id:'move',priority:0,ttlMs:20000,max:8,interrupt:true,say:{to:'{user} se une a {team}',from:'{user} cambió de {from} a {team}'}}, /* MAXIMA prioridad: hincha que cambia de equipo; en cola, uno tras otro */
- {id:'welcome',priority:2,ttlMs:25000,max:6,say:'Bienvenido {user}'} /* saludo a quien ingresa al live (misma prioridad que leer comentario: por orden de llegada) */
+ {id:'move',priority:1,ttlMs:20000,max:8,interrupt:true,say:{to:'{user} se une a {team}',from:'{user} cambió de {from} a {team}'}},
+ {id:'welcome',priority:3,ttlMs:25000,max:6,say:'Bienvenido {user}'}
 ];
 let TB={trackMeters:100,levels:[
  DEF_LEVELS[0],DEF_LEVELS[1],
- {id:'gift',priority:1,ttlMs:15000,max:5,interrupt:true,say:'Gracias {user} por el regalo'},
+ {id:'gift',priority:0,ttlMs:0,max:0,interrupt:true,say:'Gracias {user} por el regalo'},
  {id:'chat',priority:2,ttlMs:20000,max:3,maxChars:140,say:'{user} dice: {text}'},
  {id:'action',priority:3,ttlMs:12000,max:3,coalesceMs:8000,say:{like:'{user}, gracias por tus likes',follow:'Gracias {user} por seguirnos',share:'Gracias {user} por compartir'}},
  {id:'match',priority:4,ttlMs:8000,max:1,everyMs:14000,quietMs:3500,say:{start:'Arranca la carrera. La meta está a {track} metros.',normal:'{lead} va a {leadM} metros y {other} a {otherM}. Faltan {left} metros para la meta.',final:'¡{lead} está a {left} metros de la meta!',win:'¡Gana {lead}! Llegó a los {track} metros.'}}]};
@@ -5038,11 +5039,11 @@ const fill=(s,o)=>String(s||'').replace(/\{(\w+)\}/g,(_,k)=>o[k]==null?'':o[k]);
 const Q=[];let cur=null,lastEv=0,lastMatch=0,primed=false;
 const mute=()=>safe(()=>P.vo)===0||safe(()=>P.vo)===false;
 const pickVoice=()=>{const v=SS.getVoices?SS.getVoices():[];const es=v.filter(x=>/^es/i.test(x.lang));return es.find(x=>/google/i.test(x.name))||es.find(x=>/es-(US|MX|419)/i.test(x.lang))||es[0]||null};
-function purge(){const n=Date.now();for(let i=Q.length-1;i>=0;i--)if(n-Q[i].at>Q[i].ttl)Q.splice(i,1)}
+function purge(){const n=Date.now();for(let i=Q.length-1;i>=0;i--)if(Q[i].ttl>0&&n-Q[i].at>Q[i].ttl)Q.splice(i,1)}
 function say(id,text,force){
  const L=LV(id);if(!text||mute())return;
- const it={id,p:L.priority==null?9:+L.priority,text,at:Date.now(),ttl:L.ttlMs||10000};
- const same=Q.filter(x=>x.id===id);while(same.length>=(L.max||3)){Q.splice(Q.indexOf(same.shift()),1)} /* se descarta el mas viejo del mismo nivel */
+ const it={id,p:L.priority==null?9:+L.priority,text,at:Date.now(),ttl:L.ttlMs==null?10000:+L.ttlMs};
+ const same=Q.filter(x=>x.id===id),max=Number(L.max);if(max>0)while(same.length>=max){Q.splice(Q.indexOf(same.shift()),1)}
  if(force)Q.splice(0,Q.length,...Q.filter(x=>x.p<it.p));
  Q.push(it);Q.sort((a,b)=>a.p-b.p||a.at-b.at);
  if(cur&&L.interrupt&&it.p<cur.p){try{SS.cancel()}catch(e){}} /* regalo: corta lo de menor prioridad */
@@ -5072,13 +5073,16 @@ function onEvent(e){
  if(!e||e.bot)return;const t=e.type;if(!['member','chat','gift','like','follow','share'].includes(t))return;
  const user=clean(e.displayName||e.username);if(!user||safe(()=>over))return;lastEv=Date.now();
  const uk=String(e.username||'').trim().toLowerCase(),now0=Date.now();
- if(t==='gift')return say('gift',fill(LV('gift').say,{user}));
+ if(t==='gift'){
+  if(Number(e.giftDiamonds)>=1)safe(()=>window.fx&&window.fx.FA&&window.fx.FA.p('cheer'));
+  return say('gift',fill(LV('gift').say,{user}));
+ }
  if(t==='member'){ /* saludo a cada hincha que ingresa (una vez; vuelve a saludar si reingresa pasados 10 min) */
   if(uk){if(now0-(welcomedAt.get(uk)||0)<600000)return;welcomedAt.set(uk,now0)}
   return say('welcome',EN()?'Welcome '+user:fill(LV('welcome').say,{user}));
  }
  let moved=false;
- if(t==='chat'&&uk){ /* nombrar un club = unirse o cambiar de equipo: va primero que todo lo demas */
+ if(t==='chat'&&uk){ /* un cambio de equipo va despues de regalos y antes de comentarios */
   const tm=safe(()=>findTeam(e.content));
   if(typeof tm==='number'&&tm>=0){
    const prev=side.get(uk);

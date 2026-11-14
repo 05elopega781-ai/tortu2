@@ -27,8 +27,15 @@ test('TikTok events are normalized to the six allowed types without forwarding b
   assert.equal(normalizeTikTokEvent('gift', {
     user: { uniqueId: 'fan1', avatarUrl: 'https://example.test/avatar.png' },
     gift_name: 'Rose',
+    diamondCount: 1,
     repeatCount: 2
   })?.giftName, 'Rose');
+  assert.equal(normalizeTikTokEvent('gift', {
+    user: { uniqueId: 'fan1' },
+    gift_name: 'Rose',
+    diamondCount: 1,
+    repeatCount: 2
+  })?.giftDiamonds, 1);
 });
 
 test('gift combos emit only the new repeat-count delta', () => {
@@ -78,4 +85,7 @@ test('voice-priority response matches the overlay speech template contract', () 
   assert.deepEqual(Object.keys(levels.action.say).sort(), ['follow', 'like', 'share']);
   assert.deepEqual(Object.keys(levels.match.say).sort(), ['final', 'normal', 'start', 'win']);
   assert.match(levels.welcome.say, /\{user\}/);
+  assert.deepEqual(['gift', 'move', 'chat', 'welcome', 'action', 'match'].map(id => levels[id].priority), [0, 1, 2, 3, 3, 4]);
+  assert.equal(levels.gift.ttlMs, 0);
+  assert.equal(levels.gift.max, 0);
 });

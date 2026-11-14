@@ -130,6 +130,8 @@ function normalizeTikTokEvent(type, data) {
   } else if (type === 'gift') {
     entry.activityCount = Math.max(1, Math.floor(Number(data.activityCount ?? data.repeatCount ?? data.count ?? 1) || 1));
     entry.giftName = String(data.giftName || data.gift_name || data.giftDetails?.giftName || data.gift?.name || data.gift || data.giftId || '').slice(0, 120);
+    const diamonds = Number(data.diamondCount ?? data.diamond_count ?? data.giftDetails?.diamondCount ?? data.giftDetails?.diamond_count ?? data.gift?.diamondCount ?? data.gift?.diamond_count ?? 0);
+    entry.giftDiamonds = Number.isFinite(diamonds) && diamonds > 0 ? Math.floor(diamonds) : 0;
   }
   if (!entry.username && type !== 'chat') return null;
   if (type === 'chat' && !entry.content) return null;
@@ -467,10 +469,11 @@ function handleTikTokEvent(type, raw) {
   if (type === 'gift') {
     entry.activityCount = comboDelta(raw);
     if (entry.activityCount < 1) return;
+    entry.giftDiamonds *= entry.activityCount;
     settings.giftCount += entry.activityCount;
     void persistSettings().catch(error => console.error('No se pudo guardar el contador de regalos:', error.message));
     broadcastTool('game-tools', { timerStartedAt: settings.timerStartedAt, giftCount: settings.giftCount });
-    sendWhatsApp({ type: 'gift', username: entry.username, giftName: entry.giftName, activityCount: entry.activityCount });
+    sendWhatsApp({ type: 'gift', username: entry.username, giftName: entry.giftName, activityCount: entry.activityCount, giftDiamonds: entry.giftDiamonds });
   }
   if (type === 'member' && entry.username) {
     const existing = recentUsers.findIndex(user => user.username.toLowerCase() === entry.username.toLowerCase());
@@ -500,7 +503,8 @@ function handleTikTokEvent(type, raw) {
     type,
     n: entry.activityCount,
     ...(entry.content ? { text: entry.content } : {}),
-    ...(entry.giftName ? { gift: entry.giftName } : {})
+    ...(entry.giftName ? { gift: entry.giftName } : {}),
+    ...(type === 'gift' ? { giftDiamonds: entry.giftDiamonds } : {})
   }]).catch(error => console.error('No se pudo guardar el evento de usuario:', error.message));
 }
 
@@ -632,27 +636,84 @@ async function serveFile(req, res, path, options = {}) {
   }
 }
 
-const backendPage = `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>TortuWorld · Backend</title>
-<style>body{font:15px system-ui;max-width:760px;margin:2rem auto;padding:0 1rem;background:#1a1109;color:#fff}section{padding:1rem;margin:1rem 0;background:#302114;border-radius:12px}button,input{padding:.6rem;margin:.25rem;border-radius:6px}button{cursor:pointer}pre{white-space:pre-wrap;overflow-wrap:anywhere}</style>
-<h1>🐢 TortuWorld · Backend</h1><label>Token de administración <input id="token" type="password" autocomplete="current-password"></label>
-<section><h2>Conexión TikTok</h2><p id="status">Conectando…</p><form id="connect"><input name="username" placeholder="Usuario TikTok (sin @)" required><button>Conectar</button><button type="button" id="reconnect">Reintentar</button></form></section>
-<section><h2>Herramientas</h2><label>Turbo regalo % <input id="gift" type="number" min="0" max="100" value="6"></label><label>Turbo taps % <input id="tap" type="number" min="0" max="100" value="20"></label><button id="save">Guardar ajustes</button><button id="reset">Reiniciar cronómetro y regalos</button><p><button data-command="turbo-down">Turbo −</button><button data-command="turbo-up">Turbo +</button><button data-command="refresh">Recargar overlay</button></p><pre id="tools"></pre></section>
-<section><h2>Torneo Libre</h2><label><input id="tournamentEnabled" type="checkbox"> Registrar votos de comentarios reales</label><button id="saveTournament">Guardar</button></section>
-<section><h2>Overlay activo</h2><pre id="presence"></pre></section><section><h2>Estadísticas por país</h2><pre id="countries"></pre></section><p id="message"></p>
+const backendPage = `<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#090e18"><title>TortuWorld · Game Server</title>
+<style>
+:root{color-scheme:dark;--bg:#090e18;--panel:#111a29;--panel2:#0d1523;--line:#24364b;--text:#eaf3ff;--muted:#91a4bc;--cyan:#62e6ff;--lime:#a4f36d;--amber:#ffc86b;--red:#ff7189}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 75% -15%,#18314a 0,transparent 42%),var(--bg);color:var(--text);font:14px/1.5 Inter,Segoe UI,system-ui,sans-serif;min-height:100vh}
+button,input{font:inherit}button{border:1px solid #33516c;background:#18283b;color:var(--text);border-radius:9px;padding:.7rem 1rem;cursor:pointer;transition:.18s}button:hover{border-color:var(--cyan);transform:translateY(-1px);box-shadow:0 5px 22px #36c5e622}button.primary{background:linear-gradient(120deg,#1d7884,#27604a);border-color:#57d3ce;font-weight:750}
+input{border:1px solid #31435a;background:#0a1220;color:var(--text);padding:.65rem .8rem;border-radius:8px;outline:none}input:focus{border-color:var(--cyan);box-shadow:0 0 0 3px #62e6ff1b}
+.shell{max-width:1240px;margin:auto;padding:0 28px 42px}.topbar{height:82px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #203044}
+.brand{display:flex;align-items:center;gap:12px;color:inherit;text-decoration:none}.brandmark{width:42px;height:42px;border-radius:13px;display:grid;place-items:center;background:linear-gradient(145deg,#8ff3c0,#54d8ee);color:#08202a;font-size:17px;font-weight:950;box-shadow:0 0 26px #62e6ff30}.brand b{letter-spacing:.13em;font-size:13px}.brand small{display:block;color:var(--muted);font-size:10px;letter-spacing:.18em}
+.topmeta{display:flex;align-items:center;gap:18px;color:var(--muted);font-size:12px}.live-tag,.pill{display:inline-flex;align-items:center;gap:8px;border:1px solid #29465b;border-radius:999px;padding:6px 11px;background:#0d1a26;color:#b9d1e6;font-size:10px;font-weight:800;letter-spacing:.1em}.dot{width:7px;height:7px;border-radius:50%;background:var(--lime);box-shadow:0 0 12px var(--lime)}
+.hero{padding:42px 0 22px;display:grid;grid-template-columns:1.35fr .85fr;gap:36px;align-items:end}.eyebrow{color:var(--cyan);font-size:10px;font-weight:800;letter-spacing:.2em;text-transform:uppercase}.hero h1{font-size:clamp(34px,5vw,56px);line-height:1.03;letter-spacing:-.05em;margin:12px 0}.hero h1 em{font-style:normal;color:var(--lime)}.hero p{color:var(--muted);max-width:570px;margin:0}.hero-actions{display:flex;gap:10px;align-items:center;margin-top:22px}.hero-actions a{color:var(--cyan);text-decoration:none;font-weight:700;padding:10px 12px}
+.connection-card,.panel,.stat{border:1px solid var(--line);border-radius:15px;background:linear-gradient(145deg,#142033,#0f1725);box-shadow:0 16px 40px #0002}.connection-card{padding:18px}.connection-card header,.panel header{display:flex;align-items:center;justify-content:space-between;gap:12px}.connection-card h2,.panel h2{margin:0;font-size:14px;letter-spacing:.02em}.status-pill{color:var(--amber);font-size:11px;font-weight:800}.status-pill.online{color:var(--lime)}.subtle{font-size:12px;color:var(--muted)}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:18px 0 14px}.stat{padding:15px 17px}.stat-label{display:block;color:var(--muted);font-size:10px;font-weight:750;letter-spacing:.12em;text-transform:uppercase}.stat strong{display:block;font-size:22px;margin-top:7px;letter-spacing:-.03em}.stat small{color:var(--muted)}
+.layout{display:grid;grid-template-columns:1.2fr .8fr;gap:14px}.panel{padding:19px;margin-bottom:14px}.panel header{margin-bottom:16px}.panel h2{display:flex;align-items:center;gap:9px}.icon{width:30px;height:30px;border-radius:9px;display:inline-grid;place-items:center;background:#1b3341;color:var(--cyan)}
+.voice-panel{border-color:#355654;background:linear-gradient(140deg,#13231f,#101827)}.voice-order{list-style:none;padding:0;margin:15px 0 0;display:grid;gap:9px}.voice-card{display:grid;grid-template-columns:39px 1fr auto;gap:12px;align-items:start;padding:13px;border:1px solid #294237;border-radius:11px;background:#0d191b}.voice-rank{width:34px;height:34px;display:grid;place-items:center;border-radius:10px;color:#0a1a1b;background:var(--lime);font-weight:950}.voice-copy b{font-size:13px}.voice-copy p{margin:3px 0;color:var(--muted);font-size:12px}.voice-copy small{display:block;color:#a8c0bd;overflow-wrap:anywhere;font-size:11px}.voice-level{color:#8da69e;font-size:9px;letter-spacing:.08em;font-weight:800}.voice-hint{margin:12px 0 0;padding:10px 12px;background:#152b24;border-radius:9px;color:#c4e7c4;font-size:12px}
+.form-row{display:flex;flex-wrap:wrap;gap:10px;align-items:end}.field{display:grid;gap:5px;color:var(--muted);font-size:11px}.field input{width:130px}.field.token{min-width:min(100%,340px);flex:1}.field.token input{width:100%}.toolbar{display:flex;flex-wrap:wrap;gap:8px;margin-top:15px}.toolbar p{display:flex;gap:8px;margin:0;flex-wrap:wrap}.checkrow{display:flex;align-items:center;gap:9px;color:#c9d6e5}.checkrow input{accent-color:var(--lime)}.message{min-height:24px;color:var(--cyan);font-size:12px;margin:14px 0 0}.pre{padding:11px;border:1px solid #25374a;border-radius:9px;background:#0a111c;color:#b9c9dc;white-space:pre-wrap;overflow-wrap:anywhere;font:11px/1.5 ui-monospace,Consolas,monospace;max-height:230px;overflow:auto}.country-box{margin-top:12px}.server-footer{display:flex;justify-content:space-between;gap:12px;color:#657b94;font-size:10px;padding:18px 0}
+@media(max-width:850px){.hero,.layout{grid-template-columns:1fr}.hero{gap:20px;padding-top:30px}.connection-card{max-width:none}}@media(max-width:560px){.shell{padding:0 14px 28px}.topbar{height:68px}.topmeta{gap:8px}.live-tag{font-size:9px}.hero h1{font-size:37px}.stats{gap:7px}.stat{padding:12px 10px}.stat strong{font-size:18px}.panel{padding:15px}.voice-card{grid-template-columns:34px 1fr}.voice-level{grid-column:2}.field.token{min-width:100%}}
+</style></head>
+<body><div class="shell">
+<header class="topbar"><a class="brand" href="/backend"><span class="brandmark">TW</span><span><b>TORTUWORLD</b><small>GAME SERVER · CONTROL ROOM</small></span></a><div class="topmeta"><span class="live-tag"><i class="dot"></i> LIVE OPS</span><span id="clock">--:--:--</span></div></header>
+<main>
+<section class="hero"><div><span class="eyebrow">Game operations / servidor 01</span><h1>Controla la partida.<br><em>Domina el live.</em></h1><p>Centro de mando para la conexión, el overlay, las reglas de carrera y la voz en off de TortuWorld.</p><div class="hero-actions"><a href="/">Abrir overlay ↗</a><button class="primary" id="voiceToggle" aria-controls="voicePanel" aria-expanded="false">♫ Ver protocolo de voz</button></div></div>
+<article class="connection-card"><header><h2>Conexión TikTok</h2><span class="status-pill" id="status">CONECTANDO</span></header><p class="subtle" id="statusDetail">Esperando estado del servidor…</p><form id="connect" class="form-row"><label class="field">Usuario del live<input name="username" placeholder="usuario sin @" required></label><button class="primary">Conectar</button><button type="button" id="reconnect">Reintentar</button></form></article></section>
+<section class="stats"><article class="stat"><span class="stat-label">Eventos recibidos</span><strong id="eventCount">0</strong><small>En esta sesión</small></article><article class="stat"><span class="stat-label">Regalos recibidos</span><strong id="giftCount">0</strong><small>Contador del servidor</small></article><article class="stat"><span class="stat-label">Overlay</span><strong id="overlayState">Verificando</strong><small id="overlayClients">Buscando clientes activos</small></article></section>
+<section class="panel voice-panel" id="voicePanel" hidden><header><h2><span class="icon">♫</span> Protocolo de voz en off</h2><span class="pill">PRIORIDADES EN VIVO</span></header><p class="subtle">Los números más bajos hablan primero. Un regalo interrumpe los mensajes de menor prioridad.</p><ol class="voice-order" id="voiceOrder"></ol><p class="voice-hint">🎁 Cada regalo se agradece. Desde 1 diamante suena una alerta alegre. Luego: cambios de equipo → comentarios → saludos/acciones → avance y distancia a la meta.</p><p class="message" id="voiceError" role="status"></p></section>
+<div class="layout"><div>
+<section class="panel"><header><h2><span class="icon">⚙</span> Control de partida</h2><span class="pill">GAMEPLAY</span></header><div class="form-row"><label class="field">Turbo por regalo %<input id="gift" type="number" min="0" max="100" value="6"></label><label class="field">Turbo por taps %<input id="tap" type="number" min="0" max="100" value="20"></label><button class="primary" id="save">Guardar ajustes</button></div><div class="toolbar"><button id="reset">Reiniciar cronómetro y regalos</button><p><button data-command="turbo-down">Turbo −</button><button data-command="turbo-up">Turbo +</button><button data-command="refresh">Recargar overlay</button></p></div><pre class="pre" id="tools">Esperando telemetría…</pre></section>
+<section class="panel"><header><h2><span class="icon">🏁</span> Torneo Libre</h2><span class="pill">VOTACIÓN</span></header><label class="checkrow"><input id="tournamentEnabled" type="checkbox"> Registrar votos de comentarios reales</label><div class="toolbar"><button class="primary" id="saveTournament">Guardar configuración</button></div></section>
+</div><div>
+<section class="panel"><header><h2><span class="icon">🔐</span> Acceso de operador</h2><span class="pill">ADMIN</span></header><label class="field token">Token de administración<input id="token" type="password" autocomplete="current-password" placeholder="BACKEND_ADMIN_TOKEN"></label><p class="subtle">Se envía solo al servidor para las acciones protegidas.</p></section>
+<section class="panel"><header><h2><span class="icon">🌎</span> Actividad por país</h2><span class="pill">LIVE DATA</span></header><pre class="pre" id="countries">Esperando datos…</pre><div class="country-box"><span class="subtle">Estado del overlay</span><pre class="pre" id="presence">Verificando clientes…</pre></div></section>
+</div></div><p class="message" id="message" role="status"></p>
+</main><footer class="server-footer"><span>TORTUWORLD GAME SERVER</span><span>Control local · datos en tiempo real</span></footer></div>
 <script>
 const $=s=>document.querySelector(s),token=()=>$('#token').value,headers=()=>({'content-type':'application/json','authorization':'Bearer '+token()}),msg=t=>$('#message').textContent=t;
 async function admin(path,body){const r=await fetch(path,{method:'POST',headers:headers(),body:JSON.stringify(body||{})});const j=await r.json();if(!r.ok)throw Error(j.message||r.status);return j}
+$('#clock').textContent=new Date().toLocaleTimeString('es');
+setInterval(()=>$('#clock').textContent=new Date().toLocaleTimeString('es'),1000);
 $('#connect').onsubmit=async e=>{e.preventDefault();try{const r=await fetch('/api/connect',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({username:e.target.username.value})});const j=await r.json();if(!r.ok)throw Error(j.message);msg('Conectando con @'+j.username)}catch(x){msg(x.message)}};
 $('#reconnect').onclick=async()=>{try{await admin('/api/admin/reconnect');msg('Reconexión solicitada')}catch(e){msg(e.message)}};
 $('#save').onclick=async()=>{try{await admin('/api/admin/game-settings',{giftTurboProgress:+$('#gift').value,tapTurboProgress:+$('#tap').value});msg('Ajustes guardados')}catch(e){msg(e.message)}};
 $('#saveTournament').onclick=async()=>{try{await admin('/api/admin/tournament-enabled',{enabled:$('#tournamentEnabled').checked});msg('Configuración de Torneo Libre guardada')}catch(e){msg(e.message)}};
-$('#reset').onclick=async()=>{try{await admin('/api/admin/game-tools/reset');msg('Cronómetro reiniciado')}catch(e){msg(e.message)}};
+$('#reset').onclick=async()=>{if(!confirm('¿Reiniciar el cronómetro y el contador de regalos?'))return;try{await admin('/api/admin/game-tools/reset');msg('Cronómetro reiniciado')}catch(e){msg(e.message)}};
 document.querySelectorAll('[data-command]').forEach(b=>b.onclick=async()=>{try{await admin('/api/admin/game-command',{command:b.dataset.command});msg('Comando enviado')}catch(e){msg(e.message)}});
-const source=new EventSource('/api/events');source.addEventListener('status',e=>$('#status').textContent=JSON.stringify(JSON.parse(e.data)));
-const tools=new EventSource('/api/game-tools/events');tools.addEventListener('game-tools',e=>$('#tools').textContent=JSON.stringify(JSON.parse(e.data),null,2));tools.addEventListener('game-settings',e=>{const x=JSON.parse(e.data);$('#gift').value=x.giftTurboProgress;$('#tap').value=x.tapTurboProgress});
-async function refresh(){try{const [p,c]=await Promise.all([fetch('/api/admin/presence',{headers:headers()}),fetch('/api/admin/country-stats',{headers:headers()})]);$('#presence').textContent=JSON.stringify(await p.json(),null,2);$('#countries').textContent=JSON.stringify(await c.json(),null,2)}catch(e){msg(e.message)}}
+const voiceInfo={gift:['Regalo','Agradece el regalo y activa la alerta alegre desde 1 diamante.','🎁'],move:['Cambio de equipo','Anuncia cuando alguien se une o cambia de equipo.','🔁'],chat:['Comentario','Lee el comentario real del usuario.','💬'],welcome:['Ingreso al live','Da la bienvenida a quien entra.','👋'],action:['Acciones','Agradece likes, seguidores y compartidos.','⚡'],match:['Relato de carrera','Informa posiciones, metros restantes y llegada a la meta.','🏁']};
+function renderVoice(data){
+ const order=$('#voiceOrder');order.replaceChildren();
+ data.levels.slice().sort((a,b)=>a.priority-b.priority).forEach(level=>{
+  const info=voiceInfo[level.id]||[level.id,'Evento de voz configurado.','•'],item=document.createElement('li'),rank=document.createElement('span'),copy=document.createElement('div'),title=document.createElement('b'),desc=document.createElement('p'),phrases=document.createElement('small'),badge=document.createElement('span');
+  item.className='voice-card';rank.className='voice-rank';rank.textContent=info[2];copy.className='voice-copy';title.textContent=info[0];desc.textContent=info[1];
+  const say=typeof level.say==='string'?[level.say]:Object.entries(level.say||{}).map(([key,value])=>key+': '+value);
+  phrases.textContent=say.join(' · ');badge.className='voice-level';badge.textContent='PRIORIDAD '+String(level.priority).padStart(2,'0')+(level.interrupt?' · INTERRUMPE':'');
+  copy.append(title,desc,phrases);item.append(rank,copy,badge);order.append(item);
+ });
+}
+$('#voiceToggle').onclick=async()=>{
+ const panel=$('#voicePanel'),open=panel.hidden;panel.hidden=!open;$('#voiceToggle').setAttribute('aria-expanded',String(open));
+ $('#voiceToggle').textContent=open?'♫ Ocultar protocolo':'♫ Ver protocolo de voz';
+ if(!open)return;
+ try{const r=await fetch('/api/voice-priority',{cache:'no-store'});if(!r.ok)throw Error('No se pudo cargar el protocolo de voz ('+r.status+').');const data=await r.json();if(!Array.isArray(data.levels))throw Error('La configuración de voz no tiene niveles válidos.');renderVoice(data);$('#voiceError').textContent='Configuración recibida del servidor · meta a '+data.trackMeters+' m.'}
+ catch(e){$('#voiceError').textContent=e.message}
+};
+let received=0;const source=new EventSource('/api/events');
+source.addEventListener('status',e=>{const s=JSON.parse(e.data),online=!!s.connected;$('#status').textContent=online?'ONLINE':String(s.status||'DESCONECTADO').toUpperCase();$('#status').classList.toggle('online',online);$('#statusDetail').textContent=online?'Conectado a @'+(s.username||'TikTok'):'Estado del conector: '+(s.status||'sin conexión')});
+source.addEventListener('update',()=>{$('#eventCount').textContent=String(++received)});
+const tools=new EventSource('/api/game-tools/events');
+tools.addEventListener('game-tools',e=>{const x=JSON.parse(e.data);$('#tools').textContent=JSON.stringify(x,null,2);$('#giftCount').textContent=String(x.giftCount||0)});
+tools.addEventListener('game-settings',e=>{const x=JSON.parse(e.data);$('#gift').value=x.giftTurboProgress;$('#tap').value=x.tapTurboProgress});
+async function refresh(){
+ try{
+  const [p,c]=await Promise.all([fetch('/api/admin/presence',{headers:headers()}),fetch('/api/admin/country-stats',{headers:headers()})]);
+  const presence=await p.json(),countries=await c.json();if(!p.ok)throw Error(presence.message||p.status);if(!c.ok)throw Error(countries.message||c.status);
+  $('#presence').textContent=JSON.stringify(presence,null,2);$('#countries').textContent=JSON.stringify(countries,null,2);
+  $('#overlayState').textContent=presence.active?'ACTIVO':'OFFLINE';$('#overlayClients').textContent=presence.clients+' cliente(s) conectado(s)';
+ }catch(e){msg(e.message)}
+}
 setInterval(refresh,15000);refresh();
-</script>`;
+</script></body></html>`;
 
 async function handle(req, res) {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
@@ -916,20 +977,20 @@ async function handle(req, res) {
       safeJson(res, 400, { message: 'Comando no permitido.' });
       return;
     }
-    if (path === '/api/admin/tournament-enabled' && req.method === 'POST') {
-      if (!requireAdmin(req, res)) return;
-      const body = await readBody(req);
-      if (typeof body.enabled !== 'boolean') {
-        safeJson(res, 400, { message: 'enabled debe ser booleano.' });
-        return;
-      }
-      settings.tournamentEnabled = body.enabled;
-      await persistSettings();
-      safeJson(res, 200, { ok: true, enabled: settings.tournamentEnabled });
-      return;
-    }
     broadcastTool('game-command', { command: body.command });
     safeJson(res, 200, { ok: true });
+    return;
+  }
+  if (path === '/api/admin/tournament-enabled' && req.method === 'POST') {
+    if (!requireAdmin(req, res)) return;
+    const body = await readBody(req);
+    if (typeof body.enabled !== 'boolean') {
+      safeJson(res, 400, { message: 'enabled debe ser booleano.' });
+      return;
+    }
+    settings.tournamentEnabled = body.enabled;
+    await persistSettings();
+    safeJson(res, 200, { ok: true, enabled: settings.tournamentEnabled });
     return;
   }
   if (path === '/api/admin/presence' && req.method === 'GET') {

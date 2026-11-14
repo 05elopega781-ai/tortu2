@@ -69,7 +69,7 @@
   F2  CONEXION: conectar al cargar el overlay o al pedir reconexion. Cada intento espera hasta 10 s.
   F3  REINTENTOS: cada 5 s durante un maximo de 5 min; despues queda 'failed' hasta reiniciar el ciclo.
   F4  POST /api/reconnect: inicia/reintenta la conexion. 200 = ok, 409 = ya conectado (tambien ok).
-  F5  ESCUCHAR EVENTOS DE TIKTOK y normalizarlos a un formato unico (type, username, content, activityCount, giftName, profilePictureUrl).
+  F5  ESCUCHAR EVENTOS DE TIKTOK y normalizarlos a un formato unico (type, username, content, activityCount, giftName, giftDiamonds, profilePictureUrl).
   F6  FILTRAR: enviar SOLO member, chat, gift, like, follow y share. Descartar todo lo demas. Nunca enviar el campo 'bot'.
   F7  DEDUPLICAR por IDs de origen recientes (no enviar dos veces el mismo evento).
   F8  COMBOS DE REGALOS: calcular el delta de cada combo para no contar repetidos. Conservar tal cual los activityCount de regalos y likes.
@@ -156,6 +156,7 @@
           content         texto del comentario (solo chat). El frontend detecta el equipo en el texto.
           activityCount   cantidad de likes o de regalos de ese evento (entero >= 1)
           giftName        nombre del regalo (tambien se leen gift_name / gift / giftId)
+          giftDiamonds    diamantes totales del regalo/combo; la alerta alegre suena desde 1 diamante.
           profilePictureUrl  foto https del usuario (tambien se leen profilePicture / avatarUrl / avatar / userImage / imageUrl)
           bot             NUNCA lo envia el backend. Solo lo usa el frontend para sus eventos automaticos.
   POST /api/reconnect       inicia/reintenta la conexion con TikTok. 200 = ok, 409 = ya conectado (tambien ok). Otro error: JSON {"message":"..."}.
@@ -219,10 +220,10 @@
  El frontend habla por una cola de prioridad (capa voz-prioridad-js, al final del HTML). La tabla puede venir del backend: GET /api/voice-priority.
   Forma:  {"trackMeters":100,"levels":[{id,priority,ttlMs,max,interrupt?,say,coalesceMs?,everyMs?,quietMs?,maxChars?}, ...]}   (menor priority = habla primero)
   Niveles por defecto del frontend:
-   move     priority 0  MAXIMA. Hincha que nombra un club o cambia de equipo. ttl 20 s, max 8 en cola, corta lo de menor prioridad.
-   gift     priority 1  agradecer regalo. ttl 15 s, max 5, corta lo de menor prioridad.
+   gift     priority 0  MAXIMA. Agradece cada regalo y dispara una alerta alegre desde 1 diamante; no expira ni descarta regalos.
+   move     priority 1  Hincha que nombra un club o cambia de equipo. ttl 20 s, max 8 en cola.
    chat     priority 2  leer comentario. ttl 20 s, max 3, maxChars 140.
-   welcome  priority 2  saludo al hincha que ingresa (evento member). ttl 25 s, max 6. Una vez por usuario; de nuevo si reingresa pasados 10 min.
+   welcome  priority 3  saludo al hincha que ingresa (evento member). ttl 25 s, max 6. Una vez por usuario; de nuevo si reingresa pasados 10 min.
    action   priority 3  likes (se agrupan 8 s), seguir, compartir. ttl 12 s, max 3.
    match    priority 4  como va el partido, en METROS (meta = trackMeters = 100). Cada 14 s si hay silencio.
   Si el backend devuelve una tabla sin 'move' o sin 'welcome', el frontend agrega los suyos por defecto. Si el endpoint falla, usa la tabla por defecto.
