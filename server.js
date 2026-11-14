@@ -153,6 +153,13 @@ function comboDelta(data) {
   return delta;
 }
 
+function socialEventType(data) {
+  const action = String(data?.action || data?.displayType || data?.label || '').toLowerCase();
+  if (data?.follow === true || /follow|seguir/.test(action)) return 'follow';
+  if (data?.share === true || data?.shareType || data?.shareTarget || /share|compart/.test(action)) return 'share';
+  return '';
+}
+
 function identifyCountry(text) {
   const value = String(text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   return COUNTRIES.find(country => country.aliases.some(alias => {
@@ -458,10 +465,8 @@ function scheduleReconnect(error) {
 
 function handleTikTokEvent(type, raw) {
   if (type === 'social') {
-    const description = String(raw?.displayType || raw?.label || '').toLowerCase();
-    if (raw?.follow === true || /follow|seguir/.test(description)) type = 'follow';
-    else if (raw?.share === true || /share|compart/.test(description)) type = 'share';
-    else return;
+    type = socialEventType(raw);
+    if (!type) return;
   }
   if (!EVENT_TYPES.has(type) || dedupeEvent(raw, type)) return;
   const entry = normalizeTikTokEvent(type, raw);
@@ -1070,6 +1075,7 @@ export {
   normalizeTikTokEvent,
   comboDelta,
   identifyCountry,
+  socialEventType,
   appendRecords,
   stateSnapshot,
   main

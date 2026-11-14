@@ -55,7 +55,7 @@
   FIRMA DE DESPLIEGUE (anti-cache). El HTML trae en el <head> la etiqueta  <meta name="cluss-deployment-signature" content="__CLUSS_DEPLOYMENT_SIGNATURE__">.
     El servidor debe REEMPLAZAR ese marcador por una firma con formato  sha256-<16 caracteres hex en minuscula>  (hash de la version desplegada) al servir el HTML,
     y devolver ESA MISMA firma en GET /api/deployment-signature como {"signature":"sha256-..."}.
-    Si no coinciden, el frontend borra la cache del overlay y recarga UNA vez con ?_cluss_deploy=<firma>; si sigue distinta no insiste (queda un error en consola).
+    Se comprueba al cargar y antes de cada carrera. Si no coinciden, el frontend pausa la carrera, borra la cache y recarga UNA vez con ?_cluss_deploy=<firma>; si sigue distinta no insiste.
     Si el marcador no se reemplaza o el formato no es valido, el frontend no puede verificar la version (solo avisa en consola).
   GAME-TOOLS SSE (GET /api/game-tools/events), eventos con data JSON:
     game-settings  {giftTurboProgress, tapTurboProgress}   porcentajes 0-100 del turbo por regalo y por taps (predeterminados 6 y 20).
@@ -303,7 +303,7 @@ Las reglas marcadas (propuesto) aun no estan confirmadas por el autor. [REVISAR]
 
 3. EVENTOS REALES, CONTADOR Y TURBO
  - Contador de taps (ponderado): miembro 1, comentario 10, like 1 por me gusta, seguir 3, compartir 5. Todo evento real que no es regalo va SOLO al contador; los eventos reales no avanzan la pista directamente.
- - Limite de taps: inicia en 50 (HEART_START) y sube 10 (HEART_STEP) por cada 10% de avance de pista; la audiencia no afecta el limite. El servidor configura limites y porcentajes de avance (activity-policy.js).
+ - Limite de taps: inicia en 50 (HEART_START), sube 10 (HEART_STEP) por cada 10% de avance y nunca supera 100 (HEART_MAX); la audiencia no afecta el limite.
  - Al completar el limite se activa el turbo del contador durante 7 s (HEART_TURBO_MS), sin salto inmediato.
  - Regalo real (independiente del contador, por cada unidad): +10% inmediato y turbo de 15 s (GIFT_TURBO_MS) cuyo avance total se configura en el servidor (6% por defecto). Se asigna al equipo mencionado por el usuario en el ultimo minuto.
  - Eventos sin equipo asignado: van al carril seleccionado. Un comentario que nombra un equipo que no corre ademas le suma 1 voto.
@@ -353,7 +353,7 @@ Las reglas marcadas (propuesto) aun no estan confirmadas por el autor. [REVISAR]
  16. RECTA FINAL SIN VENTANAS (v17, id recta-final-js, al final): desde que la tortuga lider pasa RF=70 % de pista, ninguna ventana emergente (banner, aviso, regalo, logro, hype) se muestra, para ver la pista completa; quedan en espera (maximo 3, las mas recientes) y se muestran una a una DESPUES, al llegar a la meta (fin de ronda). Al empezar una ronda nueva lo pendiente se descarta. Solo informa; nunca pide acciones (regla 1).
  17. VOZ POR PRIORIDAD Y METROS (v18, id voz-prioridad-js, al final): orden: 1 agradecer cada regalo y alerta alegre desde 1 diamante; 2 anunciar cambios de equipo; 3 leer comentarios; 4 agradecer acciones/saludar; 5 narrar el avance y lo que falta para la meta. Tabla: server/voice-priority.js -> GET /api/voice-priority. La pista se mide en METROS: la meta esta a 100 m (1 punto de pista = 1 m). Nunca pide acciones (regla 1).
  18. VS EN BUCLE + LISTA EN EL BACK + ESTADISTICAS POR VS (v19, ids vs-motor / vs-motor-js, al final): cada VS se repite (serie tras serie) mientras haya interaccion; cuando la cuenta regresiva de inactividad llega a 0 se salta al SIGUIENTE VS HABILITADO de la lista (al terminar la lista vuelve al clasico). La lista (habilitar/deshabilitar) y las estadisticas viven en el servidor: clave cluss.vs (ver tabla de claves). Valor por evento real: miembro 1, comentario 5, like 1 c/u, seguir 3, compartir 3, regalo 10; ranking = valor por ronda. Historial 'sin eventos' = VS jugados sin ningun evento (no entran los que tienen copas). Copas por VS = suma de P.cl. Boton 🆚 abre el panel (Lista / Interaccion / Sin eventos / Copas). Los bots no cuentan. Nunca pide acciones (regla 1).
- 19. FANS ACTIVOS BAJO CADA COPA (v20, ids fans-copas / fans-copas-js, al final): en el cuadro de copas (#copas) cada tarjeta de club muestra, debajo del numero de copas, un icono de hinchas y la cantidad de fans activos; el club con mas fans (si hay lider claro) se resalta con ▲. Fan activo = usuario REAL con una interaccion (comentario, like, regalo, seguir, compartir; 'member' no cuenta) para ese club en los ultimos FAN_ACTIVE_MS (30 min). Se guarda en el servidor como huellas con sal en cluss.fans (sin nombres). Solo informa; nunca pide acciones (regla 1).
+ 19. HINCHAS POR CARRERA BAJO CADA COPA (v20, ids fans-copas / fans-copas-js, al final): en el cuadro de copas (#copas) cada tarjeta de club muestra, debajo del numero de copas, un icono de hinchas y la cantidad de usuarios unicos con interaccion real asignados a ese club durante la carrera actual. Ambos conteos reinician en cero al iniciar una carrera. Se guarda en el servidor como huellas con sal en cluss.fans (sin nombres). Solo informa; nunca pide acciones (regla 1).
  20. VOZ: CAMBIO DE EQUIPO Y SALUDO AL INGRESAR (v21, dentro de voz-prioridad-js): nivel 'move' = prioridad 1: un hincha que nombra un club ('se une a X') o cambia de uno ('cambio de X a Y') se anuncia en cola (FIFO, maximo 8). Nivel 'welcome' = prioridad 3, saludo 'Bienvenido <usuario>' a cada evento 'member' (una vez; de nuevo si reingresa tras 10 min; maximo 6 en cola). Si el backend (GET /api/voice-priority) no trae esos niveles, el frontend agrega los suyos por defecto. Nunca pide acciones (regla 1).
 11. CONTRATO CON EL BACKEND, REGLAS DE JUEGO Y CHECKLIST DE FUNCIONES: movidos al 'BLOQUE PARA EL DESARROLLADOR DEL BACKEND' (al inicio de este archivo; el desarrollador lo copia a su repo y lo borra de aqui al leerlo).
 
@@ -378,7 +378,7 @@ window.checkClussDeploymentVersion=()=>{
  deploymentCheckPromise=(async()=>{
  const signaturePattern=/^sha256-[a-f0-9]{16}$/;
  const pageSignature=document.querySelector('meta[name="cluss-deployment-signature"]')?.content;
- if(!signaturePattern.test(pageSignature||'')){console.error('No se pudo identificar la versión del overlay.');return}
+ if(!signaturePattern.test(pageSignature||''))console.error('No se pudo identificar la versión del overlay.');
  try{
   const response=await fetch('/api/deployment-signature',{cache:'no-store'});
   if(!response.ok)throw new Error('El backend no pudo informar su versión de despliegue.');
@@ -387,17 +387,18 @@ window.checkClussDeploymentVersion=()=>{
   const url=new URL(location.href);
   if(result.signature===pageSignature){
    if(url.searchParams.has('_cluss_deploy')){url.searchParams.delete('_cluss_deploy');history.replaceState(null,'',url)}
-   return
+   return true
   }
-  if(url.searchParams.get('_cluss_deploy')===result.signature){console.error('El overlay sigue desactualizado después de intentar actualizarlo.');return}
+  if(url.searchParams.get('_cluss_deploy')===result.signature){console.error('El overlay sigue desactualizado después de intentar actualizarlo.');return false}
   url.searchParams.set('_cluss_deploy',result.signature);
   try{await clearClussOverlayCache()}catch(error){console.warn('No se pudo borrar el caché del overlay antes de actualizar.',error)}
   location.replace(url.href)
- }catch(error){console.warn('No se pudo comprobar la versión del overlay.',error)}
+  return false
+ }catch(error){console.warn('No se pudo comprobar la versión del overlay.',error);return true}
  })().finally(()=>{deploymentCheckPromise=null});
  return deploymentCheckPromise;
 };
-window.checkClussDeploymentVersion();
+window.clussDeploymentReady=window.checkClussDeploymentVersion();
 </script>
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#07262B">
@@ -566,6 +567,8 @@ body{margin:0;background:var(--page);font-family:Inter,system-ui,sans-serif;colo
 .pod .pr{position:absolute;background:#2b1708;color:#ffd566;font:800 8px/11px Inter,sans-serif;text-align:center;border:1px solid #ffd566;z-index:2}
 .hd .cn{letter-spacing:-.2px}
 .evs{display:flex;gap:2px;padding:3px 4px;background:linear-gradient(#7a4e2a,#5a3a1e);border:2px solid #3f2713;border-radius:10px;box-shadow:inset 0 1px 3px rgba(0,0,0,.5)}
+.gift-total{box-sizing:border-box;width:100%;min-height:22px;padding:2px 6px;border:1px solid #9a6b22;border-radius:7px;background:linear-gradient(#503915,#35240d);color:#fff;gap:5px}
+.gift-total b{font-size:12px;color:#ffe08a}.gift-total span{font-size:13px}
 .st{flex:1;min-width:0;display:flex;flex-direction:row;align-items:center;justify-content:center;gap:3px;line-height:1}
 .st b{font-weight:400}
 .st span{font:800 11px Inter,sans-serif;color:#fff;text-shadow:0 1px 1px #000;white-space:nowrap}
@@ -752,14 +755,16 @@ document.addEventListener('visibilitychange',function(){if(document.hidden)flush
    return hash%teamCount;
   }});
  }
+ P.HEART_START=P.HEART_START||50;P.HEART_STEP=P.HEART_STEP||10;P.HEART_MAX=P.HEART_MAX||100;
  P.isInteractionEvent=P.isInteractionEvent||function(t){return['chat','like','gift','follow','share'].indexOf(t)>=0};
  P.tapEventDelta=P.tapEventDelta||function(t,n){var w={member:1,chat:10,like:1,follow:3,share:5}[t]||0,c=+n;return w?w*(isFinite(c)&&c>0?Math.max(1,Math.floor(c)):1):0};
- P.statEventDelta=P.statEventDelta||function(t,n){if(['member','chat','gift','like','follow','share'].indexOf(t)<0)return 0;var c=+n;return t==='gift'||t==='like'?(isFinite(c)&&c>0?Math.max(1,Math.floor(c)):1):1};
+ P.statEventDelta=P.statEventDelta||function(t,n){var w={member:1,chat:5,like:1,follow:3,share:3,gift:10}[t]||0,c=+n;return w?w*((t==='gift'||t==='like')&&isFinite(c)&&c>0?Math.max(1,Math.floor(c)):1):0};
+ P.eventCountDelta=P.eventCountDelta||function(t,n){if(['member','chat','gift','like','follow','share'].indexOf(t)<0)return 0;var c=+n;return t==='gift'||t==='like'?(isFinite(c)&&c>0?Math.max(1,Math.floor(c)):1):1};
  P.consumeTapCount=P.consumeTapCount||function(c,a,l){l=Math.floor(+l);if(!isFinite(l)||l<1)return{remaining:0,activations:0};var total=Math.max(0,Math.floor(+c||0))+Math.max(0,Math.floor(+a||0));return{remaining:total%l,activations:Math.floor(total/l)}};
- P.consumeTapCountWithNextLimit=P.consumeTapCountWithNextLimit||function(c,a,l){l=Math.floor(+l);if(!Number.isSafeInteger(l)||l<1)return{remaining:0,activations:0,nextLimit:l};var total=Math.min(Number.MAX_SAFE_INTEGER,Math.max(0,Math.floor(+c||0))+Math.max(0,Math.floor(+a||0)));if(total<l)return{remaining:total,activations:0,nextLimit:l};var r=total-l,n=Math.min(Number.MAX_SAFE_INTEGER,l+10);if(n===l)return{remaining:r%l,activations:1+Math.floor(r/l),nextLimit:l};var lo=0,hi=Math.ceil(Math.sqrt(r/5))+1;while(lo<hi){var mid=Math.ceil((lo+hi)/2),cost=mid*(n+(mid-1)*5);if(cost<=r)lo=mid;else hi=mid-1}var used=lo*(n+(lo-1)*5);return{remaining:r-used,activations:1+lo,nextLimit:Math.min(Number.MAX_SAFE_INTEGER,n+lo*10)}};
- P.nextTapLimit=P.nextTapLimit||function(current){var limit=Math.floor(Number(current));if(!Number.isSafeInteger(limit)||limit<1)return 100;return Math.min(Number.MAX_SAFE_INTEGER,limit+10)};
- P.giftProgress=P.giftProgress||function(n,p){return P.statEventDelta('gift',n)*p};
- P.giftTurboDuration=P.giftTurboDuration||function(n,d){return P.statEventDelta('gift',n)*d};
+ P.consumeTapCountWithNextLimit=P.consumeTapCountWithNextLimit||function(c,a,l){l=Math.min(P.HEART_MAX,Math.floor(+l));if(!Number.isSafeInteger(l)||l<1)return{remaining:0,activations:0,nextLimit:l};var total=Math.min(Number.MAX_SAFE_INTEGER,Math.max(0,Math.floor(+c||0))+Math.max(0,Math.floor(+a||0)));if(total<l)return{remaining:total,activations:0,nextLimit:l};var r=total-l,n=Math.min(P.HEART_MAX,l+10);if(n===l)return{remaining:r%l,activations:1+Math.floor(r/l),nextLimit:l};var lo=0,hi=Math.ceil(Math.sqrt(r/5))+1;while(lo<hi){var mid=Math.ceil((lo+hi)/2),cost=mid*(n+(mid-1)*5);if(cost<=r)lo=mid;else hi=mid-1}var used=lo*(n+(lo-1)*5);return{remaining:r-used,activations:1+lo,nextLimit:Math.min(P.HEART_MAX,n+lo*10)}};
+ P.nextTapLimit=P.nextTapLimit||function(current){var limit=Math.floor(Number(current));if(!Number.isSafeInteger(limit)||limit<1)return P.HEART_START;return Math.min(P.HEART_MAX,limit+10)};
+ P.giftProgress=P.giftProgress||function(n,p){return Math.max(0,+n||0)*Math.max(0,+p||0)};
+ P.giftTurboDuration=P.giftTurboDuration||function(n,d){return Math.max(0,Math.floor(+n||0))*Math.max(0,+d||0)};
  P.tapLimitStep=P.tapLimitStep||function(){return 0};
  P.inactivityTimeoutMs=P.inactivityTimeoutMs||function(){return 60000};
  P.inactivityRemainingSeconds=P.inactivityRemainingSeconds||function(i,t){return Math.max(0,Math.ceil((t-i)/1000))};
@@ -802,6 +807,7 @@ document.addEventListener('visibilitychange',function(){if(document.hidden)flush
 <div class="foot"><span class="live connecting" id="connection" role="status" aria-live="polite">conectando</span><button class="sm" id="bTurboDn" type="button" aria-label="Bajar el límite de taps del turbo en 10" title="Turbo: 10 taps menos">➖</button><button class="sm" id="bTurboUp" type="button" aria-label="Subir el límite de taps del turbo en 10" title="Turbo: 10 taps más">➕</button><button class="sm" id="bRefresh" type="button" aria-label="Refrescar página" title="Refrescar página">🔄</button><button class="sm" id="bBackend" type="button" aria-label="Abrir herramientas del backend" title="Herramientas del backend">⚙️</button></div>
 <!-- FRANJA DE ESTADISTICAS del live: solo eventos REALES (los bots y los toques manuales no cuentan). -->
 <div class="evs" id="evs" role="status" aria-label="Estadisticas del live"><div class="st" data-k="member" title="Unidos"><b>👥</b><span>0</span></div><div class="st" data-k="chat" title="Comentarios"><b>💬</b><span>0</span></div><div class="st" data-k="like" title="Me gusta"><b>❤️</b><span>0</span></div><div class="st" data-k="follow" title="Seguidores nuevos"><b>➕</b><span>0</span></div><div class="st" data-k="share" title="Compartidos"><b>↗️</b><span>0</span></div></div>
+<div class="gift-total st" data-k="gift" role="status" aria-label="Regalos recibidos en esta sesión" title="Cantidad de regalos recibidos en esta sesión"><b>🎁 Regalos</b><span>0</span></div>
 <div id="toast" role="status" aria-live="polite"></div>
 <!-- PANEL DE ESTADISTICAS (📊/🌎): contiene nombres y comentarios reales; cerrarlo antes de mostrar pantalla -->
 <section id="stp" hidden role="dialog" aria-label="Estadísticas"><header><b>🐢 Estadísticas</b><span><button data-reset>↺ Reiniciar copas</button> <button data-close aria-label="Cerrar">✕</button></span></header><nav><button data-tab="torneos">🏆 Torneos</button><button data-tab="paises">🌎 Clubes</button><button data-tab="usuarios">👤 Usuarios</button></nav><div class="stb"></div></section>
@@ -1193,7 +1199,15 @@ document.addEventListener('toggle',e=>{const d=e.target;if(!d.matches||!d.matche
 addEventListener('keydown',e=>{if(e.key==='Escape')stClose()});
 const PTS={share:5*HARD, /* compartir = 5 rayos */chat:10*HARD, /* comentar = 10 rayos */like:1*HARD,follow:3*HARD,gift:GIFT_PROGRESS};
 const TAP_POLICY=window.TORTUWORLD_ACTIVITY_POLICY;
-let sp=[1,1,1],lastTick=performance.now();
+let sp=[1,1,1],lastTick=performance.now(),raceStartedAt=lastTick,raceEndedAt=null,raceReady=false,raceStartRequest=0;
+window.getRaceElapsedMs=()=>raceReady?Math.max(0,(raceEndedAt===null?performance.now():raceEndedAt)-raceStartedAt):0;
+const initialStartRequest=raceStartRequest;
+function releaseInitialRace(){raceStartedAt=performance.now();lastTick=raceStartedAt;raceEndedAt=null;raceReady=true}
+Promise.resolve(window.clussDeploymentReady).then(matches=>{
+ if(matches===false||initialStartRequest!==raceStartRequest)return;
+ if(window.gamiFans&&typeof window.gamiFans.reset==='function')window.gamiFans.reset();
+ releaseInitialRace();
+}).catch(error=>{console.error('No se pudo verificar la firma antes de iniciar la carrera.',error);if(initialStartRequest===raceStartRequest)releaseInitialRace()});
 const newSpeeds=()=>{sp=T.map(()=>0.985+Math.random()*0.03)};newSpeeds();
 const $=s=>document.querySelector(s);
 const FLAG_C={cp:['#0b3d91','#c8102e'],li:['#ffffff','#111111'],gu:['#f5c400','#111111'],lu:['#2563eb','#f5c400'],na:['#c8102e','#ffffff'],sa:['#f5c400','#1d4ed8'],to:['#16a34a','#ffffff']};
@@ -1281,7 +1295,7 @@ function tapStep(i,count){const l=$('#ln'+i);if(!l)return;clearTimeout(tapStepTi
 function hop(i){const g=$('#in'+i);g.classList.remove('hop');void g.getBBox();g.classList.add('hop')}
 /* Avance directo para eventos automaticos y acciones del motor; los eventos reales usan solo el contador tap tap. */
 function push(i,type,n=1){
- if(over||i<0||!S[i])return;
+ if(over||!raceReady||i<0||!S[i])return;
  const pts=type==='gift'?GIFT_PROGRESS*n:PTS[type]*n,s=S[i];
  s.p+=pts;if(type==='like')s.l+=n;if(type==='gift')s.g+=n;
  const prev=lead;lead=update();if(pts>0)float(i,'+'+(+pts.toFixed(1)));hop(i);walk(i);
@@ -1292,7 +1306,7 @@ function push(i,type,n=1){
 /* Fin de carrera: bloquea botones, muestra al ganador y programa la siguiente carrera (9 s) */
 function win(i){
  if(over)return;
- over=true;update();$('#cw'+i).setAttribute('display','');
+ over=true;raceEndedAt=performance.now();update();$('#cw'+i).setAttribute('display','');
  if(window.liveEventMonitor)window.liveEventMonitor.completeRound(T[i].id);
  document.querySelectorAll('.act').forEach(b=>b.disabled=true);
  say(`¡${T[i].n} GANA LA CARRERA!`);
@@ -1305,7 +1319,7 @@ function win(i){
 /* Nueva carrera: vuelve todo a 0 y sortea velocidades pasivas nuevas */
 function reset(){
  clearTimeout(rs);sel=0;over=false;lead=-1;S.forEach(s=>{s.p=0;s.g=0;s.l=0});
- picks.clear();lastChat.clear();recentChatPicks.clear();clearRoundCaches();newSpeeds();lastTick=performance.now();
+ picks.clear();lastChat.clear();recentChatPicks.clear();clearRoundCaches();newSpeeds();lastTick=performance.now();raceStartedAt=lastTick;raceEndedAt=null;
  T.forEach((t,i)=>$('#cw'+i).setAttribute('display','none'));
  $('#win').classList.remove('show'); update();say('¡Y ARRANCAN LAS TORTUGAS!');
 }
@@ -1597,7 +1611,7 @@ fetch('/api/reconnect',{method:'POST'}).then(async response=>{
 });
 setInterval(()=>{
  const now=performance.now(),dt=Math.min(2,(now-lastTick)/1000);lastTick=now;
- if(over)return;
+ if(over||!raceReady)return;
  S.forEach((s,i)=>{if(s.p<PASSIVE_CAP){s.p=Math.min(PASSIVE_CAP,s.p+100/RACE_SECONDS*sp[i]*dt);walk(i)}}); /* avance pasivo con tope */
  lead=update();
  let w=-1;S.forEach((s,i)=>{if(w<0&&s.p>=100)w=i}); /* gana en cuanto la cabeza toca la meta, sin esperar a que termine el turbo */
@@ -1747,7 +1761,7 @@ push=function(i,type,n=1){
   if(type!=='gift')ach('first');
   if(type==='like')S[i].l+=n;
   if(type==='gift'){
-   const gifts=TAP_POLICY.statEventDelta('gift',n),progress=TAP_POLICY.giftProgress(gifts,GIFT_PROGRESS);
+   const gifts=Math.max(1,Math.floor(Number(n)||1)),progress=TAP_POLICY.giftProgress(gifts,GIFT_PROGRESS);
    S[i].g+=gifts;S[i].p=Math.min(100,S[i].p+progress);
    lead=update();float(i,'+'+progress+' m');walk(i);giftTurboOn(i,gifts);
   }
@@ -1778,9 +1792,9 @@ T.forEach((t,i)=>$('#sv'+i).insertAdjacentHTML('beforeend','<div class="nest" id
  fanPool    = usuarios del JSON (HINCHAS_JSON + /api/recent-users): se muestran al frente SOLO mientras el equipo no tenga eventos reales. */
 const HINCHAS_JSON=[ /* editar aqui. Formato: {username:'maria_ol', avatar:'https://...jpg', team:'ol'}  (team opcional: 'ol' o 'cp'; avatar debe ser https) */ ];
 /* ===== CONTADOR TAP TAP: inicia en 50 y sube 10 por cada 10% de avance ===== */
-/* LIMITE DE TAPS: arranca en 50 y sube 10 por cada 10% de avance de la pista (del carril que va primero): 0-9% = 50, 10-19% = 60 ... 90-100% = 140 */
-const HEART_START=50,HEART_STEP=10;
-const heartBase=()=>{let mx=0;try{mx=Math.max(0,...S.map(s=>+s.p||0))}catch(e){}return HEART_START+HEART_STEP*Math.floor(Math.min(100,mx)/10)};
+/* LIMITE DE TAPS: arranca en 50, sube 10 por cada 10% y no supera 100. */
+const HEART_START=TAP_POLICY.HEART_START,HEART_STEP=TAP_POLICY.HEART_STEP,HEART_MAX=TAP_POLICY.HEART_MAX;
+const heartBase=()=>{let mx=0;try{mx=Math.max(0,...S.map(s=>+s.p||0))}catch(e){}return Math.min(HEART_MAX,HEART_START+HEART_STEP*Math.floor(Math.min(100,mx)/10))};
 let HEART_N=HEART_START,heartLimitOffset=0;
 const heart=T.map(()=>0);
 function setLiveTurboSettings(giftProgress,tapProgress){
@@ -1793,7 +1807,7 @@ function setLiveTurboSettings(giftProgress,tapProgress){
 }
 window.setLiveTurboSettings=setLiveTurboSettings;
 function syncHeartLimit(){
- const n=Math.max(10,Math.min(Number.MAX_SAFE_INTEGER,heartBase()+heartLimitOffset));
+ const n=Math.max(10,Math.min(HEART_MAX,heartBase()+heartLimitOffset));
  if(n===HEART_N)return;
  const prevN=HEART_N;HEART_N=n;
  T.forEach((_,i)=>renderHeart(i));
@@ -1836,7 +1850,7 @@ window.recordLiveTap=(team,count)=>heartAdd(team,count);
 /* ➕ ➖ ajustan temporalmente el limite durante esta carrera. */
 function setTurboLimit(d){
  const previous=HEART_N;
- heartLimitOffset=Math.max(-10000,Math.min(10000,heartLimitOffset+d));
+ heartLimitOffset=Math.max(10-heartBase(),Math.min(HEART_MAX-heartBase(),heartLimitOffset+d));
  syncHeartLimit();
  const n=HEART_N;
  if(previous===n){toast('Límite de turbo: '+HEART_N+' taps ('+(d<0?'mínimo':'máximo')+')','⚡');return}
@@ -2050,7 +2064,19 @@ reset=function(){ajustesDePartida();seen.clear();known.clear();userScore.clear()
 window.tortugas.reset=reset;window.tortugas.resetCopas=resetCopas;
 const _resetTurboLimit=reset;
 setInterval(()=>{try{if(!over)syncHeartLimit()}catch(e){}},250); /* sube el limite cada 10% de pista */
-reset=function(){if(window.checkClussDeploymentVersion)window.checkClussDeploymentVersion();heartLimitOffset=0;HEART_N=HEART_START;matchInteractionCount=0;lastInteractionAt=Date.now();lowActivityFinished=false;_resetTurboLimit()};
+reset=function(){
+ const request=++raceStartRequest,context=this,args=Array.from(arguments);
+ raceReady=false;heartLimitOffset=0;HEART_N=HEART_START;matchInteractionCount=0;lastInteractionAt=Date.now();lowActivityFinished=false;
+ const start=()=>{
+  if(request!==raceStartRequest)return;
+  if(window.gamiFans&&typeof window.gamiFans.reset==='function')window.gamiFans.reset();
+  _resetTurboLimit.apply(context,args);raceStartedAt=performance.now();raceEndedAt=null;lastTick=raceStartedAt;raceReady=true;
+ };
+ let check;
+ try{check=window.checkClussDeploymentVersion?window.checkClussDeploymentVersion():Promise.resolve(true)}
+ catch(error){console.error('No se pudo comprobar la firma del despliegue.',error);start();return}
+ Promise.resolve(check).then(matches=>{if(matches!==false)start()}).catch(error=>{console.error('No se pudo comprobar la firma del despliegue.',error);start()});
+};
 window.tortugas.reset=reset;
 const _scn=setConnection;
 setConnection=function(s){const k=!!(s.connected||s.isConnected);if(k!==cc){cc=k;A.sfx(k?'on':'off');if(k)toast('Conectado en vivo','🟢')}_scn(s)};
@@ -2156,7 +2182,7 @@ handleLiveEntry=function(e){
  try{if(e&&!e.bot&&['member','chat','gift','like','follow','share'].includes(e.type))stUser(e)}catch(x){console.error(x)}
  try{if(e&&!e.bot&&TAP_POLICY.isInteractionEvent(e.type)){lastInteractionAt=Date.now();matchInteractionCount++} /* solo interacciones, no ingresos al LIVE */
   if(e&&!e.bot){
-   const n=TAP_POLICY.statEventDelta(e.type,e.activityCount);
+   const n=TAP_POLICY.eventCountDelta(e.type,e.activityCount);
    if(n){ST[e.type]+=n;const el=document.querySelector('.st[data-k="'+e.type+'"]');
   if(el){el.querySelector('span').textContent=stFmt(ST[e.type]);el.classList.remove('up');void el.offsetWidth;el.classList.add('up')}
    }
@@ -2912,8 +2938,8 @@ const q=new URLSearchParams(location.search),sf=q.get('safe')==='0',ST=sf?14:SAF
 const a=document.getElementById('app'),r=document.documentElement;
 r.style.setProperty('--st',ST+'px');r.style.setProperty('--sb',SB+'px');
 /* barra de herramientas (usuario + botones en una fila) y debajo la franja de estadisticas */
-const evs=document.getElementById('evs'),foot=document.querySelector('.foot');
-if(evs&&foot){const tb=document.createElement('div');tb.id='topbar';a.appendChild(tb);tb.append(evs,foot)} /* estadisticas ARRIBA, herramientas debajo */
+const evs=document.getElementById('evs'),giftTotal=document.querySelector('.gift-total'),foot=document.querySelector('.foot');
+if(evs&&foot){const tb=document.createElement('div');tb.id='topbar';a.appendChild(tb);tb.append(evs);if(giftTotal)tb.append(giftTotal);tb.append(foot)} /* estadisticas y contador de regalos ARRIBA, herramientas debajo */
 /* El ancho logico sigue en 416; el alto se estira al de la pantalla (9:16) en vez de dejar franjas vacias */
 function fit(){
  const w=innerWidth,h=innerHeight,H=Math.max(746,Math.min(1000,Math.round(416*h/w))),k=Math.min(w/416,h/H);
@@ -3464,7 +3490,7 @@ function honra(e){const u=String(e.username),n=Math.max(1,+e.activityCount||1);
  const url=e.profilePictureUrl||e.profilePicture||e.avatarUrl||e.avatar||e.userImage||e.imageUrl||'';
  const c=C.get(u)||{n:0,url:'',t:-1};c.n+=n;if(url)c.url=url;let tt=-1;try{tt=recentChatTeam(u.toLowerCase())}catch(x){}if(tt>=0)c.t=tt;C.set(u,c);last=u;hit=u;pinta();hit=''}
 const _h=handleLiveEntry;
-handleLiveEntry=function(e){const r=_h.apply(this,arguments);try{if(e&&!e.bot&&e.type!=='gift'&&e.username)honra(e)}catch(x){}return r};
+handleLiveEntry=function(e){const r=_h.apply(this,arguments);try{if(e&&!e.bot&&e.type==='gift'&&e.username)honra(e)}catch(x){}return r};
 const _r=reset;reset=function(){C=new Map();last='';pinta();return _r.apply(this,arguments)};
 /* SALA DE HONOR: se vacia en CADA partido. Ademas del reset del juego, vigila el cambio de duelo y el cierre de la pantalla de ganador. */
 let hSig='',hWin=false;
@@ -4136,7 +4162,8 @@ render();
 #cronoRegalos{position:static;flex:0 0 auto;margin-left:auto;display:flex;align-items:center;justify-content:flex-end;gap:6px;pointer-events:none}
 /* cronometro sin icono */
 #cronoRegalos #crono{box-sizing:border-box;height:26px;display:flex;align-items:center;gap:4px;padding:0 7px;border-radius:7px;background:#0b0b0b;border-style:solid;border-width:2px;font:800 15px/1 Inter,sans-serif;font-variant-numeric:tabular-nums;letter-spacing:.3px;white-space:nowrap;position:static;text-align:left;text-shadow:0 1px 2px #000}
-#cronoRegalos #crono{border-color:#5ec3f2;box-shadow:0 2px 5px rgba(0,0,0,.7),0 0 7px rgba(94,195,242,.5);color:#fff}</style>
+#cronoRegalos #crono{border-color:#5ec3f2;box-shadow:0 2px 5px rgba(0,0,0,.7),0 0 7px rgba(94,195,242,.5);color:#fff}
+#cronoRegalos #raceClock{box-sizing:border-box;height:26px;display:flex;align-items:center;justify-content:center;gap:3px;padding:0 5px;border:2px solid #ffe14d;border-radius:7px;background:#0b0b0b;color:#fff;font:800 13px/1 Inter,sans-serif;font-variant-numeric:tabular-nums;letter-spacing:0;white-space:nowrap;text-shadow:0 1px 2px #000}</style>
 <script>
 (function(){
  if(document.getElementById('cronoRegalos'))return;
@@ -4144,12 +4171,17 @@ render();
  const c=document.createElement('div');c.id='crono';c.setAttribute('role','timer');c.title='Tiempo con el overlay activo (hh:mm:ss)';
  const tx=document.createElement('span');tx.id='cronoTxt';tx.textContent='00:00:00';
  c.append(tx);
- w.append(c);
+ const race=document.createElement('div');race.id='raceClock';race.setAttribute('role','timer');race.title='Tiempo transcurrido de la carrera actual';
+ const raceIcon=document.createElement('span');raceIcon.textContent='🏁';raceIcon.setAttribute('aria-hidden','true');
+ const raceTx=document.createElement('span');raceTx.id='raceClockTxt';raceTx.textContent='00:00';
+ race.append(raceIcon,raceTx);
+ w.append(c,race);
  const ft=document.querySelector('#topbar .foot')||document.querySelector('.foot');if(ft)ft.appendChild(w);else document.getElementById('topbar').appendChild(w);
  let timerStartedAt=Date.now();
  const p=n=>String(n).padStart(2,'0');
  function tick(){const s=Math.max(0,Math.floor((Date.now()-timerStartedAt)/1000)),t=p(Math.floor(s/3600))+':'+p(Math.floor(s%3600/60))+':'+p(s%60);if(tx.textContent!==t){tx.textContent=t;c.setAttribute('aria-label','Tiempo activo '+t)}}
- tick();setInterval(tick,1000);
+ function tickRace(){const s=Math.max(0,Math.floor(window.getRaceElapsedMs()/1000)),t=p(Math.floor(s/60))+':'+p(s%60);if(raceTx.textContent!==t){raceTx.textContent=t;race.setAttribute('aria-label','Duración de la carrera '+t)}}
+ tick();tickRace();setInterval(()=>{tick();tickRace()},1000);
  const toolsSource=new EventSource('/api/game-tools/events');
  const overlayClientId=window.crypto&&window.crypto.randomUUID
   ?window.crypto.randomUUID()
@@ -4731,8 +4763,8 @@ window.gamiTaps={state:st};
  background:linear-gradient(#7a4e2a,#5a3a1e);border:2px solid #3f2713;border-radius:10px;box-shadow:inset 0 1px 3px rgba(0,0,0,.5)}
 .side>.foot>.live{grid-column:1/-1;box-sizing:border-box;width:100%!important;min-width:0!important;max-width:none!important;min-height:20px!important;height:20px;padding:0 4px!important;font-size:10px!important;justify-content:center!important;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .side>.foot>.sm{box-sizing:border-box;flex:none;width:100%!important;min-width:0!important;max-width:none!important;height:24px!important;padding:0!important;font-size:12px!important;border-width:1px;border-radius:6px;display:flex!important;align-items:center;justify-content:center}
-.side>.foot>#cronoRegalos{grid-column:1/-1;display:flex!important;justify-content:center;width:100%;margin:0!important;transform:none!important}
-.side>.foot>#cronoRegalos #crono{height:22px!important;padding:0 6px!important;font-size:13px!important;letter-spacing:0}
+.side>.foot>#cronoRegalos{grid-column:1/-1;display:flex!important;flex-direction:column;justify-content:center;width:100%;margin:0!important;transform:none!important;gap:3px!important}
+.side>.foot>#cronoRegalos #crono,.side>.foot>#cronoRegalos #raceClock{box-sizing:border-box;justify-content:center;width:100%;min-width:0;height:20px!important;padding:0 4px!important;font-size:11px!important;letter-spacing:0;gap:3px}
 /* la barra inferior ya no existe: la pista toma ese alto */
 .sv>svg{height:calc(496px + var(--ex) + 38px)!important}
 </style>
@@ -5154,18 +5186,21 @@ const safe=f=>{try{return f()}catch(e){return undefined}};
 const M=window.liveEventMonitor;
 if(!M||!safe(()=>CLASSIC_DEFS)||!safe(()=>SRV)||!safe(()=>T)||!safe(()=>P))return;
 const K='cluss.vs',key=(a,b)=>[a,b].sort().join('|');
+const STARTER_KEY=key('ol','cp'),CONFIG_VERSION=2;
 const nmOf=id=>{const n=String(safe(()=>tournamentItem(id).n)||id);return n[0]+n.slice(1).toLowerCase()};
-const DEF=CLASSIC_DEFS.map(d=>({k:key(d[0],d[1]),a:d[0],b:d[1],n:d[2],on:true}));
+const DEF=CLASSIC_DEFS.map(d=>({k:key(d[0],d[1]),a:d[0],b:d[1],n:d[2],on:key(d[0],d[1])===STARTER_KEY}));
 /* ---------- LISTA + ESTADISTICAS (documento del SERVIDOR: GET/PUT /api/state/cluss.vs) ---------- */
 const raw=safe(()=>SRV.get(K,null))||{};
-const D={cur:raw.cur||'',st:(raw.st&&typeof raw.st==='object')?raw.st:{},list:[]};
-(Array.isArray(raw.list)?raw.list:[]).forEach(x=>{const d=DEF.find(y=>y.k===x.k);if(d&&!D.list.some(y=>y.k===d.k))D.list.push(Object.assign({},d,{on:x.on!==false}))});
+const hasCurrentConfig=raw.v===CONFIG_VERSION;
+const D={cur:hasCurrentConfig?raw.cur||'':STARTER_KEY,st:(raw.st&&typeof raw.st==='object')?raw.st:{},list:[]};
+(hasCurrentConfig&&Array.isArray(raw.list)?raw.list:[]).forEach(x=>{const d=DEF.find(y=>y.k===x.k);if(d&&!D.list.some(y=>y.k===d.k))D.list.push(Object.assign({},d,{on:x.on!==false}))});
 DEF.forEach(d=>{if(!D.list.some(y=>y.k===d.k))D.list.push(Object.assign({},d))}); /* VS nuevos al final */
-const save=()=>safe(()=>SRV.set(K,{v:1,cur:D.cur,list:D.list.map(x=>({k:x.k,on:x.on})),st:D.st}));
+const save=()=>safe(()=>SRV.set(K,{v:CONFIG_VERSION,cur:D.cur,list:D.list.map(x=>({k:x.k,on:x.on})),st:D.st}));
 const byKey=k=>D.list.find(x=>x.k===k);
 const en=()=>D.list.filter(x=>x.on);
 const duelKey=()=>key(T[0].id,T[1].id);
 if(!byKey(D.cur)){const here=byKey(duelKey());D.cur=here?here.k:(en()[0]||D.list[0]).k}
+if(!hasCurrentConfig)save();
 function advance(){ /* siguiente VS HABILITADO de la lista; al final vuelve al primero (el clasico) */
  const n=D.list.length,p=Math.max(0,D.list.findIndex(x=>x.k===D.cur));
  for(let i=1;i<=n;i++){const x=D.list[(p+i)%n];if(x.on)return x.k}
@@ -5254,7 +5289,7 @@ if(foot){const bt=document.createElement('button');bt.className='sm';bt.id='bVs'
 window.gamiVS={data:D,advance,curVS};
 })();
 </script>
-<!-- ===== v20: FANS ACTIVOS POR EQUIPO bajo cada copa. Icono de hinchas + numero debajo del conteo de copas de cada club, para medir quien tiene mas fans; el que va arriba se resalta. Fan activo = usuario REAL con una interaccion (comentario, like, regalo, seguir o compartir; 'member' no cuenta) para ese club en los ultimos FAN_ACTIVE_MS. Se guarda en el servidor como huellas con sal (cluss.fans), sin nombres. Solo informa; nunca pide acciones (regla 1). ===== -->
+<!-- ===== v20: FANS POR EQUIPO bajo cada copa. Icono de hinchas + numero debajo del conteo de copas de cada club. Fan = usuario REAL con una interaccion (comentario, like, regalo, seguir o compartir; 'member' no cuenta) asignado a ese equipo durante la carrera actual. El conteo empieza en cero al comenzar cada carrera y se guarda como huellas con sal (cluss.fans), sin nombres. Solo informa; nunca pide acciones (regla 1). ===== -->
 <style id="fans-copas">
 #copas .cc-fans{display:flex;align-items:center;justify-content:center;gap:3px;margin-top:1px;font:900 12px/1 Inter,sans-serif;color:#d9ecff;text-shadow:0 1px 2px #000;font-variant-numeric:tabular-nums;white-space:nowrap}
 #copas .cc-fans svg{flex:none;width:19px;height:13px;fill:currentColor;filter:drop-shadow(0 1px 1px rgba(0,0,0,.7))}
@@ -5267,23 +5302,25 @@ window.gamiVS={data:D,advance,curVS};
 const safe=f=>{try{return f()}catch(e){return undefined}};
 const M=window.liveEventMonitor;
 if(!M||!safe(()=>SRV)||!safe(()=>T))return;
-const K='cluss.fans',FAN_ACTIVE_MS=30*60*1000; /* ventana de "activo": cambia el valor aqui */
-const SALT='cluss-fans-v1';
+const K='cluss.fans';
+const SALT='cluss-fans-v2';
 const hash=u=>{let h=2166136261;const s=SALT+u;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)}return(h>>>0).toString(36)}; /* huella: no se guarda el nombre */
-const fans={};   /* id de club -> {huella: ultima interaccion (ms)} */
-const saved=safe(()=>SRV.get(K,null));
-if(saved&&saved.c&&typeof saved.c==='object')Object.keys(saved.c).forEach(id=>{const o=saved.c[id];if(o&&typeof o==='object'){fans[id]={};Object.keys(o).forEach(h=>{if(+o[h]>0)fans[id][h]=+o[h]})}});
-const count=id=>{const o=fans[id];if(!o)return 0;const lim=Date.now()-FAN_ACTIVE_MS;let n=0;for(const h in o)if(o[h]>=lim)n++;return n};
+const fans={};   /* id de club -> {huella: evento real de esta carrera} */
+const count=id=>Object.keys(fans[id]||{}).length;
 let dirty=false;
-function save(){if(!dirty)return;dirty=false;const lim=Date.now()-FAN_ACTIVE_MS,c={};
- Object.keys(fans).forEach(id=>{const o={};for(const h in fans[id]){if(fans[id][h]>=lim)o[h]=fans[id][h];else delete fans[id][h]}if(Object.keys(o).length)c[id]=o});
- safe(()=>SRV.set(K,{v:1,active_ms:FAN_ACTIVE_MS,c}))}
+function save(){if(!dirty)return;dirty=false;const c={};
+ Object.keys(fans).forEach(id=>{if(Object.keys(fans[id]).length)c[id]=Object.assign({},fans[id])});
+ safe(()=>SRV.set(K,{v:2,c}))}
 setInterval(save,5000);
+function resetFans(){Object.keys(fans).forEach(id=>delete fans[id]);dirty=true;save();paint()}
 /* evento REAL -> fan activo del club al que el motor lo asigno (los bots y los 'member' no cuentan) */
 function onEvent(e){
  if(!e||e.bot||!['chat','gift','like','follow','share'].includes(e.type))return;
  const u=String(e.username||'').trim().toLowerCase();if(!u)return;
- const kn=safe(()=>window.__known.get(u)),id=safe(()=>T[kn.t].id);if(!id)return;
+ const kn=safe(()=>window.__known.get(u));
+ const t=kn&&Number.isInteger(kn.t)?kn.t:safe(()=>window.resolveSupportTeamFor(u));
+ const id=Number.isInteger(t)&&T[t]?T[t].id:'';
+ if(!id)return;
  (fans[id]||(fans[id]={}))[hash(u)]=Date.now();dirty=true;paint();
 }
 const _rx=M.receive;if(typeof _rx==='function')M.receive=function(e){const r=_rx.apply(this,arguments);safe(()=>onEvent(e));return r};
@@ -5303,14 +5340,14 @@ function paint(){
  const mx=Math.max(0,...rows.map(r=>r.n)),lead=rows.filter(r=>r.n===mx).length===1&&mx>0; /* se resalta solo si hay un lider claro */
  rows.forEach(r=>{
   const html=ICON+'<b>'+r.n+'</b>';if(r.el.dataset.v!==html){r.el.dataset.v=html;r.el.innerHTML=html}
-  r.el.title='Seguidores activos (últimos '+Math.round(FAN_ACTIVE_MS/60000)+' min)';r.el.setAttribute('aria-label',r.el.title+': '+r.n);
+  r.el.title='Hinchas únicos con interacción en esta carrera';r.el.setAttribute('aria-label',r.el.title+': '+r.n);
   r.el.classList.toggle('top',lead&&r.n===mx);
  });
 }
 setInterval(paint,1000); /* el cuadro de copas se redibuja solo: se vuelve a colocar */
 const box=document.getElementById('copas');if(box&&window.MutationObserver)new MutationObserver(paint).observe(box,{childList:true});
-paint();
-window.gamiFans={count,fans};
+window.gamiFans={count,fans,reset:resetFans};
+resetFans();
 })();
 </script>
 </body>

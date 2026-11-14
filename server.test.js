@@ -1,8 +1,53 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { comboDelta, identifyCountry, normalizeTikTokEvent, normalizeUsername } from './server.js';
+import { runInNewContext } from 'node:vm';
+import { comboDelta, identifyCountry, normalizeTikTokEvent, normalizeUsername, socialEventType } from './server.js';
 import voicePriority from './server/voice-priority.js';
+
+test('live event counters count events, not weighted interaction points', () => {
+  const browser = { window: {} };
+  runInNewContext(readFileSync(new URL('./public/activity-policy.js', import.meta.url), 'utf8'), browser);
+  const policy = browser.window.TORTUWORLD_ACTIVITY_POLICY;
+  assert.equal(policy.HEART_MAX, 100);
+  assert.equal(policy.eventCountDelta('chat', 8), 1);
+  assert.equal(policy.eventCountDelta('follow', 8), 1);
+  assert.equal(policy.eventCountDelta('share', 8), 1);
+  assert.equal(policy.eventCountDelta('like', 8), 8);
+  assert.equal(policy.eventCountDelta('gift', 3), 3);
+  assert.equal(policy.eventCountDelta('unknown', 3), 0);
+  assert.equal(policy.statEventDelta('chat', 8), 5);
+  assert.equal(policy.statEventDelta('gift', 3), 30);
+});
+
+test('deployment check accepts the current signature and reloads a stale overlay once', async () => {
+  const html = readFileSync(new URL('./v21_voz_saludos_backend.html', import.meta.url), 'utf8');
+  const script = html.match(/<script>\s*([\s\S]*?)<\/script>/)?.[1];
+  assert.ok(script);
+  const loadCheck = (pageSignature, serverSignature) => {
+    let replacedUrl = '';
+    const window = { caches: { keys: async () => [], delete: async () => true } };
+    const context = {
+      window,
+      caches: window.caches,
+      document: { querySelector: () => ({ content: pageSignature }) },
+      fetch: async () => ({ ok: true, json: async () => ({ signature: serverSignature }) }),
+      location: { href: 'https://overlay.example/', replace: url => { replacedUrl = url; } },
+      history: { replaceState() {} },
+      URL,
+      Promise,
+      console
+    };
+    runInNewContext(script, context);
+    return { ready: window.clussDeploymentReady, replacedUrl: () => replacedUrl };
+  };
+  const current = loadCheck('sha256-aaaaaaaaaaaaaaaa', 'sha256-aaaaaaaaaaaaaaaa');
+  assert.equal(await current.ready, true);
+  assert.equal(current.replacedUrl(), '');
+  const stale = loadCheck('sha256-aaaaaaaaaaaaaaaa', 'sha256-bbbbbbbbbbbbbbbb');
+  assert.equal(await stale.ready, false);
+  assert.match(stale.replacedUrl(), /_cluss_deploy=sha256-bbbbbbbbbbbbbbbb/);
+});
 
 test('username normalization strips leading @ and whitespace', () => {
   assert.equal(normalizeUsername('  @@ tortu  '), 'tortu');
@@ -49,6 +94,13 @@ test('gift combos emit only the new repeat-count delta', () => {
   assert.equal(comboDelta(item(1)), 1);
   assert.equal(comboDelta(item(3)), 2);
   assert.equal(comboDelta(item(3)), 0);
+});
+
+test('social event actions classify follows and shares for live counters', () => {
+  assert.equal(socialEventType({ action: 'follow' }), 'follow');
+  assert.equal(socialEventType({ action: 'share' }), 'share');
+  assert.equal(socialEventType({ shareTarget: 'chat' }), 'share');
+  assert.equal(socialEventType({ action: 'like' }), '');
 });
 
 test('country recognition accepts names and ISO codes', () => {

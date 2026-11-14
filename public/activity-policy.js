@@ -23,6 +23,7 @@
   var policy = {
     HEART_START: 50,
     HEART_STEP: 10,
+    HEART_MAX: 100,
     HEART_TURBO_MS: 7000,
     GIFT_TURBO_MS: 15000,
     GIFT_TURBO_PROGRESS: 6,
@@ -37,6 +38,10 @@
     statEventDelta: function (type, activityCount) {
       if (!(type in statWeights)) return 0;
       return statWeights[type] * ((type === 'like' || type === 'gift') ? count(activityCount) : 1);
+    },
+    eventCountDelta: function (type, activityCount) {
+      if (!(type in statWeights)) return 0;
+      return (type === 'like' || type === 'gift') ? count(activityCount) : 1;
     },
     consumeTapCount: function (current, delta, limit) {
       var cap = Math.max(1, Math.floor(Number(limit) || 1));
