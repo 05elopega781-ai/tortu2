@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { comboDelta, identifyCountry, normalizeTikTokEvent, normalizeUsername } from './server.js';
+import voicePriority from './server/voice-priority.js';
 
 test('username normalization strips leading @ and whitespace', () => {
   assert.equal(normalizeUsername('  @@ tortu  '), 'tortu');
@@ -68,4 +69,13 @@ test('service worker caches only the shell and bypasses live API responses', () 
   assert.match(worker, /request\.mode === 'navigate'/);
   assert.match(worker, /url\.pathname\.startsWith\('\/api\/'\)/);
   assert.match(worker, /tortu2-shell-/);
+});
+
+test('voice-priority response matches the overlay speech template contract', () => {
+  const levels = Object.fromEntries(voicePriority.levels.map(level => [level.id, level]));
+  assert.deepEqual(Object.keys(levels.move.say).sort(), ['from', 'to']);
+  assert.match(levels.chat.say, /\{text\}/);
+  assert.deepEqual(Object.keys(levels.action.say).sort(), ['follow', 'like', 'share']);
+  assert.deepEqual(Object.keys(levels.match.say).sort(), ['final', 'normal', 'start', 'win']);
+  assert.match(levels.welcome.say, /\{user\}/);
 });

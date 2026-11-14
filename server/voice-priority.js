@@ -1,11 +1,42 @@
 export default {
   trackMeters: 100,
   levels: [
-    { id: 'move', priority: 0, ttlMs: 20000, max: 8, interrupt: true, say: 'Cambio de equipo', coalesceMs: 0, everyMs: 0, quietMs: 0, maxChars: 140 },
-    { id: 'gift', priority: 1, ttlMs: 15000, max: 5, interrupt: true, say: 'Gracias por el regalo', coalesceMs: 0, everyMs: 0, quietMs: 0, maxChars: 140 },
-    { id: 'chat', priority: 2, ttlMs: 20000, max: 3, say: 'Comentario', coalesceMs: 0, everyMs: 0, quietMs: 0, maxChars: 140 },
-    { id: 'welcome', priority: 2, ttlMs: 25000, max: 6, say: 'Bienvenido', coalesceMs: 0, everyMs: 0, quietMs: 0, maxChars: 140 },
-    { id: 'action', priority: 3, ttlMs: 12000, max: 3, say: 'Acción', coalesceMs: 8000, everyMs: 0, quietMs: 0, maxChars: 140 },
-    { id: 'match', priority: 4, ttlMs: 14000, max: 1, say: 'Estado del partido', coalesceMs: 14000, everyMs: 14000, quietMs: 14000, maxChars: 140 }
+    {
+      id: 'move',
+      priority: 0,
+      ttlMs: 20000,
+      max: 8,
+      interrupt: true,
+      say: { to: '{user} se une a {team}', from: '{user} cambió de {from} a {team}' }
+    },
+    { id: 'gift', priority: 1, ttlMs: 15000, max: 5, interrupt: true, say: 'Gracias {user} por el regalo' },
+    { id: 'chat', priority: 2, ttlMs: 20000, max: 3, maxChars: 140, say: '{user} dice: {text}' },
+    { id: 'welcome', priority: 2, ttlMs: 25000, max: 6, say: 'Bienvenido {user}' },
+    {
+      id: 'action',
+      priority: 3,
+      ttlMs: 12000,
+      max: 3,
+      coalesceMs: 8000,
+      say: {
+        like: '{user}, gracias por tus likes',
+        follow: 'Gracias {user} por seguirnos',
+        share: 'Gracias {user} por compartir'
+      }
+    },
+    {
+      id: 'match',
+      priority: 4,
+      ttlMs: 8000,
+      max: 1,
+      everyMs: 14000,
+      quietMs: 3500,
+      say: {
+        start: 'Arranca la carrera. La meta está a {track} metros.',
+        normal: '{lead} va a {leadM} metros y {other} a {otherM}. Faltan {left} metros para la meta.',
+        final: '¡{lead} está a {left} metros de la meta!',
+        win: '¡Gana {lead}! Llegó a los {track} metros.'
+      }
+    }
   ]
 };
