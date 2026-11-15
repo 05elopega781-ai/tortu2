@@ -146,8 +146,44 @@ test('backend exposes business-unit buttons and live motor telemetry', async () 
     assert.ok(script);
     assert.doesNotThrow(() => new Function(script));
     assert.match(html, /id="eventList"/);
+    assert.match(html, /id="copyEvents"/);
     assert.match(html, /ÚLTIMOS 50/);
+    assert.match(html, /<aside class="event-filters" aria-label="Filtrar eventos">/);
+    for (const type of ['member', 'chat', 'like', 'follow', 'share', 'gift']) {
+      assert.match(html, new RegExp(`data-event-filter="${type}"`));
+    }
     assert.match(script, /while\(list\.children\.length>50\)/);
+    assert.match(script, /navigator\.clipboard\.writeText\(text\)/);
+    assert.match(script, /row\.dataset\.eventType=entry\.type/);
+    const filterCode = script.match(/function applyEventFilters\(\)\{[\s\S]*?\n\}/)?.[0];
+    assert.ok(filterCode);
+    const filterInputs = ['all', 'member', 'chat', 'like', 'follow', 'share', 'gift'].map(type => ({
+      dataset: { eventFilter: type },
+      checked: true
+    }));
+    const eventRows = ['chat', 'like'].map(type => ({ dataset: { eventType: type }, hidden: false }));
+    const eventList = { children: eventRows };
+    const eventEmpty = { hidden: true, textContent: '' };
+    const filter = new Function(
+      'eventFilterInputs',
+      'eventTypeFilters',
+      '$',
+      `${filterCode}; return applyEventFilters;`
+    )(
+      filterInputs,
+      filterInputs.filter(input => input.dataset.eventFilter !== 'all'),
+      selector => selector === '#eventList' ? eventList : eventEmpty
+    );
+    filter();
+    filterInputs.find(input => input.dataset.eventFilter === 'chat').checked = false;
+    filter();
+    assert.equal(eventRows[0].hidden, true);
+    assert.equal(eventRows[1].hidden, false);
+    assert.equal(filterInputs[0].checked, false);
+    filterInputs.find(input => input.dataset.eventFilter === 'like').checked = false;
+    filter();
+    assert.equal(eventEmpty.hidden, false);
+    assert.match(eventEmpty.textContent, /No hay eventos/);
     assert.match(html, /<button type="button" class="active" data-unit="eventos">/);
     const userPanel = html.match(/<section class="panel business-panel" data-units="usuarios">([\s\S]*?)<\/section>/)?.[1];
     assert.ok(userPanel);
@@ -293,6 +329,7 @@ test('TikTok events are normalized to the six allowed types without forwarding b
   assert.deepEqual(entry, {
     type: 'chat',
     username: 'fan1',
+    displayName: '',
     content: 'Hola',
     activityCount: 1,
     giftName: '',
@@ -311,6 +348,10 @@ test('TikTok events are normalized to the six allowed types without forwarding b
     diamondCount: 1,
     repeatCount: 2
   })?.giftDiamonds, 1);
+  const member = normalizeTikTokEvent('member', { user: { nickname: 'Fan nickname' } });
+  assert.equal(member.username, '');
+  assert.equal(member.displayName, 'Fan nickname');
+  assert.equal(normalizeTikTokEvent('share', { user: { displayId: 'fan2' } })?.username, 'fan2');
 });
 
 test('raw TikTok likes pass the frontend statistics and per-team tap counter', () => {
@@ -392,6 +433,8 @@ test('gift combos emit only the new repeat-count delta', () => {
 test('social event actions classify follows and shares for live counters', () => {
   assert.equal(socialEventType({ action: 'follow' }), 'follow');
   assert.equal(socialEventType({ action: 'share' }), 'share');
+  assert.equal(socialEventType({ common: { displayText: { key: 'follow' } } }), 'follow');
+  assert.equal(socialEventType({ common: { displayText: { key: 'share' } } }), 'share');
   assert.equal(socialEventType({ shareTarget: 'chat' }), 'share');
   assert.equal(socialEventType({ action: 'like' }), '');
 });

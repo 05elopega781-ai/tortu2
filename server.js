@@ -92,12 +92,17 @@ function eventUser(data) {
 }
 
 function eventId(data) {
-  return String(data?.msgId || data?.messageId || data?.eventId || '');
+  return String(data?.msgId || data?.messageId || data?.eventId || data?.common?.msgId || '');
 }
 
 function eventUsername(data) {
   const user = eventUser(data);
-  return normalizeUsername(user.uniqueId || user.unique_id || user.username || data?.uniqueId || '');
+  return normalizeUsername(user.uniqueId || user.unique_id || user.username || user.displayId || data?.uniqueId || data?.unique_id || '');
+}
+
+function eventDisplayName(data) {
+  const user = eventUser(data);
+  return String(user.nickname || user.displayName || user.name || data?.nickname || data?.displayName || '').trim().slice(0, 100);
 }
 
 function eventAvatar(data) {
@@ -129,9 +134,11 @@ function dedupeEvent(data, type) {
 
 function normalizeTikTokEvent(type, data) {
   if (!EVENT_TYPES.has(type) || !data || typeof data !== 'object') return null;
+  const username = eventUsername(data);
   const entry = {
     type,
-    username: eventUsername(data),
+    username,
+    displayName: eventDisplayName(data),
     content: type === 'chat' ? String(data.comment ?? data.content ?? '').slice(0, 500) : '',
     activityCount: 1,
     giftName: '',
@@ -145,7 +152,7 @@ function normalizeTikTokEvent(type, data) {
     const diamonds = Number(data.diamondCount ?? data.diamond_count ?? data.giftDetails?.diamondCount ?? data.giftDetails?.diamond_count ?? data.gift?.diamondCount ?? data.gift?.diamond_count ?? 0);
     entry.giftDiamonds = Number.isFinite(diamonds) && diamonds > 0 ? Math.floor(diamonds) : 0;
   }
-  if (!entry.username && type !== 'chat') return null;
+  if (!entry.username && !entry.displayName && type !== 'chat') return null;
   if (type === 'chat' && !entry.content) return null;
   return entry;
 }
@@ -166,7 +173,11 @@ function comboDelta(data) {
 }
 
 function socialEventType(data) {
-  const action = String(data?.action || data?.displayType || data?.label || '').toLowerCase();
+  const action = String(
+    data?.action || data?.displayType || data?.label ||
+    data?.common?.displayText?.key || data?.common?.displayText?.defaultPattern ||
+    data?.common?.displayText?.text || ''
+  ).toLowerCase();
   if (data?.follow === true || /follow|seguir/.test(action)) return 'follow';
   if (data?.share === true || data?.shareType || data?.shareTarget || /share|compart/.test(action)) return 'share';
   return '';
@@ -490,7 +501,7 @@ async function createConnection(username) {
     const instance = new Connector(requestedUsername, { processInitialData: false });
     attemptConnection = instance;
     connector = instance;
-    const eventTypes = ['member', 'chat', 'gift', 'like', 'social'];
+    const eventTypes = ['member', 'chat', 'gift', 'like', 'follow', 'share', 'social'];
     for (const type of eventTypes) {
       instance.on(type, raw => {
         if (connector === instance) handleTikTokEvent(type, raw);
@@ -804,7 +815,8 @@ input{border:1px solid #31435a;background:#0a1220;color:var(--text);padding:.65r
 .voice-panel{border-color:#355654;background:linear-gradient(140deg,#13231f,#101827)}.voice-order{list-style:none;padding:0;margin:15px 0 0;display:grid;gap:9px}.voice-card{display:grid;grid-template-columns:39px 1fr auto;gap:12px;align-items:start;padding:13px;border:1px solid #294237;border-radius:11px;background:#0d191b}.voice-rank{width:34px;height:34px;display:grid;place-items:center;border-radius:10px;color:#0a1a1b;background:var(--lime);font-weight:950}.voice-copy b{font-size:13px}.voice-copy p{margin:3px 0;color:var(--muted);font-size:12px}.voice-copy small{display:block;color:#a8c0bd;overflow-wrap:anywhere;font-size:11px}.voice-level{color:#8da69e;font-size:9px;letter-spacing:.08em;font-weight:800}.voice-hint{margin:12px 0 0;padding:10px 12px;background:#152b24;border-radius:9px;color:#c4e7c4;font-size:12px}
 .form-row{display:flex;flex-wrap:wrap;gap:10px;align-items:end}.field{display:grid;gap:5px;color:var(--muted);font-size:11px}.field input{width:130px}.field.token{min-width:min(100%,340px);flex:1}.field.token input{width:100%}.toolbar{display:flex;flex-wrap:wrap;gap:8px;margin-top:15px}.toolbar p{display:flex;gap:8px;margin:0;flex-wrap:wrap}.checkrow{display:flex;align-items:center;gap:9px;color:#c9d6e5}.checkrow input{accent-color:var(--lime)}.message{min-height:24px;color:var(--cyan);font-size:12px;margin:14px 0 0}.pre{padding:11px;border:1px solid #25374a;border-radius:9px;background:#0a111c;color:#b9c9dc;white-space:pre-wrap;overflow-wrap:anywhere;font:11px/1.5 ui-monospace,Consolas,monospace;max-height:230px;overflow:auto}.country-box{margin-top:12px}.motor-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.motor-card{border:1px solid #25374a;border-radius:11px;background:#0a111c;padding:12px}.motor-card h3{margin:0 0 8px;font-size:13px}.motor-card .meter{height:8px;background:#1a2938;border-radius:8px;overflow:hidden;margin:8px 0}.motor-card .meter i{display:block;height:100%;background:linear-gradient(90deg,#62e6ff,#a4f36d)}.motor-values{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;color:var(--muted);font-size:11px}.motor-values b{color:var(--text);font-weight:700}.unit-empty{padding:14px;border:1px dashed #29465b;border-radius:10px;color:var(--muted)}.server-footer{display:flex;justify-content:space-between;gap:12px;color:#657b94;font-size:10px;padding:18px 0}
 .event-list{list-style:none;padding:0;margin:0;display:grid;gap:8px;max-height:430px;overflow-y:auto}.event-row{display:grid;grid-template-columns:72px 100px minmax(100px,.55fr) minmax(0,1.45fr);gap:10px;align-items:start;padding:10px 12px;border:1px solid #25374a;border-radius:9px;background:#0a111c;font-size:12px}.event-row time,.event-user{color:var(--muted)}.event-kind{color:var(--cyan);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.04em}.event-detail{overflow-wrap:anywhere;white-space:pre-wrap}.log-row{display:grid;grid-template-columns:78px 70px minmax(0,1fr);gap:10px;align-items:start;padding:10px 12px;border:1px solid #25374a;border-radius:9px;background:#0a111c;font-size:12px}.log-row time{color:var(--muted)}.log-level{font-size:10px;font-weight:800;letter-spacing:.05em}.log-level.error{color:var(--red)}.log-level.info{color:var(--cyan)}.log-message{overflow-wrap:anywhere;white-space:pre-wrap}
-@media(max-width:850px){.hero,.layout{grid-template-columns:1fr}.hero{gap:20px;padding-top:30px}.connection-card{max-width:none}}@media(max-width:560px){.shell{padding:0 14px 28px}.topbar{height:68px}.topmeta{gap:8px}.live-tag{font-size:9px}.hero h1{font-size:37px}.stats{gap:7px}.stat{padding:12px 10px}.panel{padding:15px}.voice-card{grid-template-columns:34px 1fr}.voice-level{grid-column:2}.field.token{min-width:100%}.event-row{grid-template-columns:60px 1fr;gap:6px}.event-user,.event-detail{grid-column:2}.event-kind{grid-column:1;grid-row:2}.log-row{grid-template-columns:60px 1fr;gap:6px}.log-message{grid-column:2}}
+.event-layout{display:grid;grid-template-columns:minmax(0,1fr) 190px;gap:14px;align-items:start}.event-filters{padding:12px;border:1px solid var(--line);border-radius:11px;background:#0c1522}.event-filters h3{margin:0 0 10px;font-size:12px}.event-filter{display:flex;align-items:center;gap:8px;padding:5px 0;color:#c9d6e5;font-size:12px}.event-filter input{width:auto;margin:0;accent-color:var(--cyan)}.event-toolbar{display:flex;justify-content:flex-end;margin-bottom:10px}.event-toolbar button{padding:.5rem .75rem;font-size:12px}
+@media(max-width:850px){.hero,.layout{grid-template-columns:1fr}.hero{gap:20px;padding-top:30px}.connection-card{max-width:none}}@media(max-width:560px){.shell{padding:0 14px 28px}.topbar{height:68px}.topmeta{gap:8px}.live-tag{font-size:9px}.hero h1{font-size:37px}.stats{gap:7px}.stat{padding:12px 10px}.panel{padding:15px}.voice-card{grid-template-columns:34px 1fr}.voice-level{grid-column:2}.field.token{min-width:100%}.event-layout{grid-template-columns:1fr}.event-filters{order:-1}.event-filters form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 10px}.event-row{grid-template-columns:60px 1fr;gap:6px}.event-user,.event-detail{grid-column:2}.event-kind{grid-column:1;grid-row:2}.log-row{grid-template-columns:60px 1fr;gap:6px}.log-message{grid-column:2}}
 </style></head>
 <body><div class="shell">
 <header class="topbar"><a class="brand" href="/backend"><span class="brandmark">NG</span><span><b>NEGOCIO</b><small>GAME SERVER · CONTROL ROOM</small></span></a><div class="topmeta"><span class="live-tag"><i class="dot"></i> LIVE OPS</span><span id="clock">--:--:--</span></div></header>
@@ -814,7 +826,7 @@ input{border:1px solid #31435a;background:#0a1220;color:var(--text);padding:.65r
 <nav class="unit-nav" id="businessUnits" aria-label="Unidades de negocio">
 <button type="button" class="active" data-unit="eventos">Eventos</button><button type="button" data-unit="usuarios">Usuarios</button><button type="button" data-unit="regalos">Regalos</button><button type="button" data-unit="equipos">Equipos</button><button type="button" data-unit="torneos">Torneos</button><button type="button" data-unit="estadisticas">Estadísticas</button><button type="button" data-unit="motor">Motor tiempo real</button><button type="button" data-unit="turbo-equipos">Turbo contador equipos</button><button type="button" data-unit="turbo-regalos">Turbo regalos</button><button type="button" data-unit="voz">Voz en off</button><button type="button" data-unit="honor">Cuadro de honor</button><button type="button" data-unit="narrador">Narrador</button><button type="button" data-unit="acciones">CTAs / Acciones</button><button type="button" data-unit="logs">Logs</button>
 </nav>
-<section class="panel business-panel" data-units="eventos"><header><h2><span class="icon">⚡</span> Eventos LIVE</h2><span class="pill">ÚLTIMOS 50</span></header><p class="subtle">Eventos recibidos en esta sesión: <b id="eventUnitCount">0</b>. Los más recientes aparecen primero.</p><p class="unit-empty" id="eventEmpty">Esperando el primer evento…</p><ol class="event-list" id="eventList" aria-live="polite"></ol><pre class="pre" id="tools" hidden></pre></section>
+<section class="panel business-panel" data-units="eventos"><header><h2><span class="icon">⚡</span> Eventos LIVE</h2><span class="pill">ÚLTIMOS 50</span></header><p class="subtle">Eventos recibidos en esta sesión: <b id="eventUnitCount">0</b>. Los más recientes aparecen primero.</p><div class="event-layout"><div><div class="event-toolbar"><button type="button" id="copyEvents">Copiar eventos visibles</button></div><p class="message" id="eventMessage" role="status"></p><p class="unit-empty" id="eventEmpty">Esperando eventos de TikTok…</p><ol class="event-list" id="eventList" aria-live="polite"></ol></div><aside class="event-filters" aria-label="Filtrar eventos"><h3>Mostrar eventos</h3><form id="eventFilterForm"><label class="event-filter"><input type="checkbox" data-event-filter="all" checked> Todos</label><label class="event-filter"><input type="checkbox" data-event-filter="member" checked> Se unieron</label><label class="event-filter"><input type="checkbox" data-event-filter="chat" checked> Comentarios</label><label class="event-filter"><input type="checkbox" data-event-filter="like" checked> Me gusta / taps</label><label class="event-filter"><input type="checkbox" data-event-filter="follow" checked> Seguidores</label><label class="event-filter"><input type="checkbox" data-event-filter="share" checked> Compartidos</label><label class="event-filter"><input type="checkbox" data-event-filter="gift" checked> Regalos</label></form></aside></div><pre class="pre" id="tools" hidden></pre></section>
 <section class="panel business-panel" data-units="logs" id="logsPanel"><header><h2><span class="icon">📜</span> Logs técnicos</h2><span class="pill" id="logsCount">SESIÓN ACTUAL</span></header><p class="subtle">Avisos y errores recientes del servidor. Se conservan mientras esta sesión del servidor está activa.</p><div class="toolbar"><button id="refreshLogs">Actualizar</button></div><p class="unit-empty" id="logsEmpty">Sin registros técnicos todavía.</p><ol class="event-list" id="serverLogs" aria-live="polite"></ol><p class="message" id="logsError" role="status"></p></section>
 <section class="panel business-panel" data-units="usuarios"><header><h2><span class="icon">👤</span> Usuarios</h2><span class="pill">LIVE</span></header><pre class="pre" id="recentUsers">Cargando usuarios…</pre><article class="connection-card user-connection"><header><h2>Conexión TikTok</h2><span class="status-pill" id="status">CONECTANDO</span></header><p class="subtle">Usuario actual: <b id="currentUsername">Sin usuario</b></p><p class="subtle" id="statusDetail">Esperando estado del servidor…</p><form id="connect" class="form-row"><label class="field">Usuario del live<input name="username" placeholder="Ingresa el usuario sin @" required></label><button class="primary">Conectar</button><button type="button" id="reconnect">Reintentar</button></form></article></section>
 <section class="panel business-panel" data-units="regalos turbo-regalos"><header><h2><span class="icon">🎁</span> Regalos y turbo de regalos</h2><span class="pill">CONTROL</span></header><p class="subtle">Total recibidos: <b id="giftUnitCount">0</b></p><div class="form-row"><label class="field">Avance total del turbo por regalos (%)<input id="gift" type="number" min="0" max="100" value="6"></label><button class="primary" id="saveGiftTurbo">Guardar turbo de regalos</button></div></section>
@@ -921,6 +933,35 @@ async function loadTechnicalLogs(){
  }catch(error){$('#logsError').textContent=error.message}
 }
 const eventLabels={member:'Se unió',chat:'Comentario',gift:'Regalo',like:'Me gusta',follow:'Seguidor',share:'Compartido'};
+const eventFilterInputs=[...document.querySelectorAll('[data-event-filter]')];
+const eventTypeFilters=eventFilterInputs.filter(input=>input.dataset.eventFilter!=='all');
+function applyEventFilters(){
+ const allFilter=eventFilterInputs.find(input=>input.dataset.eventFilter==='all');
+ if(allFilter)allFilter.checked=eventTypeFilters.every(input=>input.checked);
+ const selected=new Set(eventTypeFilters.filter(input=>input.checked).map(input=>input.dataset.eventFilter));
+ const rows=[...$('#eventList').children];
+ rows.forEach(row=>{row.hidden=!selected.has(row.dataset.eventType)});
+ const empty=$('#eventEmpty');
+ const hasVisibleRows=rows.some(row=>!row.hidden);
+ empty.hidden=hasVisibleRows;
+ if(rows.length&&!hasVisibleRows)empty.textContent='No hay eventos con los filtros seleccionados.';
+ else empty.textContent='Esperando eventos de TikTok…';
+}
+$('#eventFilterForm').addEventListener('change',event=>{
+ const input=event.target.closest('input[data-event-filter]');
+ if(!input)return;
+ if(input.dataset.eventFilter==='all')eventTypeFilters.forEach(filter=>{filter.checked=input.checked});
+ applyEventFilters();
+});
+$('#copyEvents').addEventListener('click',async()=>{
+ const rows=[...$('#eventList').querySelectorAll('li:not([hidden])')];
+ if(!rows.length){$('#eventMessage').textContent='No hay eventos visibles para copiar.';return}
+ const text=rows.map(row=>[...row.children].map(cell=>cell.textContent.trim()).join('\\t')).join('\\n');
+ try{
+  await navigator.clipboard.writeText(text);
+  $('#eventMessage').textContent=rows.length+' evento(s) copiados.';
+ }catch(error){$('#eventMessage').textContent='No se pudieron copiar los eventos: '+error.message}
+});
 function eventDetail(entry){
  const count=Math.max(1,Math.floor(Number(entry.activityCount)||1));
  if(entry.type==='chat')return entry.content||'Comentario';
@@ -933,9 +974,11 @@ function eventDetail(entry){
 function renderLiveEvent(entry){
  const list=$('#eventList'),row=document.createElement('li'),time=document.createElement('time'),kind=document.createElement('span'),user=document.createElement('span'),detail=document.createElement('span');
  const receivedAt=Number(entry.receivedAt)||Date.now();
- row.className='event-row';time.dateTime=new Date(receivedAt).toISOString();time.textContent=new Date(receivedAt).toLocaleTimeString('es',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
- kind.className='event-kind';kind.textContent=eventLabels[entry.type]||'Evento';user.className='event-user';user.textContent=entry.username?'@'+entry.username:'—';
- detail.className='event-detail';detail.textContent=eventDetail(entry);row.append(time,kind,user,detail);$('#eventEmpty').hidden=true;list.prepend(row);
+ row.className='event-row';row.dataset.eventType=entry.type;time.dateTime=new Date(receivedAt).toISOString();time.textContent=new Date(receivedAt).toLocaleTimeString('es',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+ kind.className='event-kind';kind.textContent=eventLabels[entry.type]||'Evento';
+ user.className='event-user';user.textContent=entry.username?'@'+entry.username:(entry.displayName||'—');
+ if(entry.username&&entry.displayName&&entry.displayName.toLowerCase()!==entry.username.toLowerCase())user.textContent+=' · '+entry.displayName;
+ detail.className='event-detail';detail.textContent=eventDetail(entry);row.append(time,kind,user,detail);list.prepend(row);applyEventFilters();
  while(list.children.length>50)list.lastElementChild.remove();
 }
 let received=0;const source=new EventSource('/api/events');
