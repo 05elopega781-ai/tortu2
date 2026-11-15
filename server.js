@@ -42,6 +42,29 @@ const COUNTRIES = [
   ['NL', 'Países Bajos', ['paises bajos', 'países bajos', 'holanda', '🇳🇱', 'nl']],
   ['JP', 'Japón', ['japon', 'japón', '🇯🇵', 'jp']]
 ].map(([code, name, aliases]) => ({ code, name, aliases }));
+const DEFAULT_VS_CONFIG_VERSION = 3;
+const DEFAULT_VS = [
+  { k: 'cp|ol', label: 'OLIMPIA vs CERRO', on: true },
+  { k: 'ucl-bc|ucl-rm', label: 'BARCELONA vs REAL MADRID', on: true },
+  { k: 'lib-boc|lib-riv', label: 'BOCA vs RIVER', on: false },
+  { k: 'cl-cel|cl-ran', label: 'CELTIC vs RANGERS', on: false },
+  { k: 'cl-int|ucl-milan', label: 'INTER vs MILAN', on: false },
+  { k: 'cl-mu|ucl-lv', label: 'MANCHESTER UNITED vs LIVERPOOL', on: false },
+  { k: 'cl-nau|lib-pen', label: 'NACIONAL vs PEÑAROL', on: false },
+  { k: 'cl-fen|cl-gal', label: 'FENERBAHÇE vs GALATASARAY', on: false },
+  { k: 'cl-ahl|cl-zam', label: 'AL AHLY vs ZAMALEK', on: false },
+  { k: 'cl-ame|cl-chi', label: 'AMÉRICA vs CHIVAS', on: false },
+  { k: 'cl-flu|lib-fla', label: 'FLUMINENSE vs FLAMENGO', on: false },
+  { k: 'cl-gre|cl-sci', label: 'GRÊMIO vs INTERNACIONAL', on: false },
+  { k: 'cl-aja|cl-fey', label: 'AJAX vs FEYENOORD', on: false },
+  { k: 'cl-crv|cl-par', label: 'ESTRELLA ROJA vs PARTIZÁN', on: false },
+  { k: 'ct-ar|ct-br', label: 'ARGENTINA vs BRASIL', on: false },
+  { k: 'ct-ar|ct-uy', label: 'ARGENTINA vs URUGUAY', on: false },
+  { k: 'ct-en|ct-sc', label: 'INGLATERRA vs ESCOCIA', on: false },
+  { k: 'ct-ar|ct-en', label: 'ARGENTINA vs INGLATERRA', on: false },
+  { k: 'ct-de|ct-nl', label: 'ALEMANIA vs PAÍSES BAJOS', on: false },
+  { k: 'ct-de|ct-it', label: 'ALEMANIA vs ITALIA', on: false }
+];
 const ALLOWED_STATE_KEY = /^cluss\.(?:v1|torneoLock|lang|crest\.[\w-]+|vs|fans|stats|libreVotes|chatArchive|log\.[\w.-]+)$/;
 
 const clients = new Set();
@@ -85,6 +108,21 @@ function normalizeUsername(value) {
 
 function configuredUsername(savedUsername = settings.username) {
   return normalizeUsername(savedUsername || process.env.TIKTOK_USERNAME || 'd4n1el325');
+}
+
+function vsConfigView(value) {
+  const current = value?.v === DEFAULT_VS_CONFIG_VERSION && Array.isArray(value.list);
+  const enabled = new Map(current ? value.list.filter(item => item && typeof item.k === 'string').map(item => [item.k, item.on !== false]) : []);
+  return {
+    v: DEFAULT_VS_CONFIG_VERSION,
+    cur: current && typeof value.cur === 'string' ? value.cur : DEFAULT_VS[0].k,
+    list: DEFAULT_VS.map(item => ({
+      k: item.k,
+      label: item.label,
+      on: current ? enabled.get(item.k) === true : item.on
+    })),
+    st: value?.st && typeof value.st === 'object' && !Array.isArray(value.st) ? value.st : {}
+  };
 }
 
 function eventUser(data) {
@@ -816,7 +854,7 @@ input{border:1px solid #31435a;background:#0a1220;color:var(--text);padding:.65r
 .unit-nav{display:flex;gap:8px;overflow-x:auto;padding:7px 2px 14px;margin:4px 0 8px;scrollbar-width:thin}.unit-nav button{flex:0 0 auto;padding:.58rem .85rem;font-size:12px}.unit-nav button.active{border-color:var(--cyan);background:#173449;color:#fff;box-shadow:0 0 0 2px #62e6ff18}
 .layout{display:grid;grid-template-columns:1.2fr .8fr;gap:14px}.panel{padding:19px;margin-bottom:14px}.panel header{margin-bottom:16px}.panel h2{display:flex;align-items:center;gap:9px}.icon{width:30px;height:30px;border-radius:9px;display:inline-grid;place-items:center;background:#1b3341;color:var(--cyan)}
 .voice-panel{border-color:#355654;background:linear-gradient(140deg,#13231f,#101827)}.voice-order{list-style:none;padding:0;margin:15px 0 0;display:grid;gap:9px}.voice-card{display:grid;grid-template-columns:39px 1fr auto;gap:12px;align-items:start;padding:13px;border:1px solid #294237;border-radius:11px;background:#0d191b}.voice-rank{width:34px;height:34px;display:grid;place-items:center;border-radius:10px;color:#0a1a1b;background:var(--lime);font-weight:950}.voice-copy b{font-size:13px}.voice-copy p{margin:3px 0;color:var(--muted);font-size:12px}.voice-copy small{display:block;color:#a8c0bd;overflow-wrap:anywhere;font-size:11px}.voice-level{color:#8da69e;font-size:9px;letter-spacing:.08em;font-weight:800}.voice-hint{margin:12px 0 0;padding:10px 12px;background:#152b24;border-radius:9px;color:#c4e7c4;font-size:12px}
-.form-row{display:flex;flex-wrap:wrap;gap:10px;align-items:end}.field{display:grid;gap:5px;color:var(--muted);font-size:11px}.field input{width:130px}.field.token{min-width:min(100%,340px);flex:1}.field.token input{width:100%}.toolbar{display:flex;flex-wrap:wrap;gap:8px;margin-top:15px}.toolbar p{display:flex;gap:8px;margin:0;flex-wrap:wrap}.checkrow{display:flex;align-items:center;gap:9px;color:#c9d6e5}.checkrow input{accent-color:var(--lime)}.message{min-height:24px;color:var(--cyan);font-size:12px;margin:14px 0 0}.pre{padding:11px;border:1px solid #25374a;border-radius:9px;background:#0a111c;color:#b9c9dc;white-space:pre-wrap;overflow-wrap:anywhere;font:11px/1.5 ui-monospace,Consolas,monospace;max-height:230px;overflow:auto}.country-box{margin-top:12px}.motor-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.motor-card{border:1px solid #25374a;border-radius:11px;background:#0a111c;padding:12px}.motor-card h3{margin:0 0 8px;font-size:13px}.motor-card .meter{height:8px;background:#1a2938;border-radius:8px;overflow:hidden;margin:8px 0}.motor-card .meter i{display:block;height:100%;background:linear-gradient(90deg,#62e6ff,#a4f36d)}.motor-values{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;color:var(--muted);font-size:11px}.motor-values b{color:var(--text);font-weight:700}.unit-empty{padding:14px;border:1px dashed #29465b;border-radius:10px;color:var(--muted)}.server-footer{display:flex;justify-content:space-between;gap:12px;color:#657b94;font-size:10px;padding:18px 0}
+.form-row{display:flex;flex-wrap:wrap;gap:10px;align-items:end}.field{display:grid;gap:5px;color:var(--muted);font-size:11px}.field input{width:130px}.field.token{min-width:min(100%,340px);flex:1}.field.token input{width:100%}.toolbar{display:flex;flex-wrap:wrap;gap:8px;margin-top:15px}.toolbar p{display:flex;gap:8px;margin:0;flex-wrap:wrap}.checkrow{display:flex;align-items:center;gap:9px;color:#c9d6e5}.checkrow input{accent-color:var(--lime)}.vs-config-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:7px;margin-top:12px;max-height:320px;overflow:auto;padding-right:4px}.vs-config-list .checkrow{padding:9px 10px;border:1px solid #25374a;border-radius:8px;background:#0a111c;font-size:12px}.message{min-height:24px;color:var(--cyan);font-size:12px;margin:14px 0 0}.pre{padding:11px;border:1px solid #25374a;border-radius:9px;background:#0a111c;color:#b9c9dc;white-space:pre-wrap;overflow-wrap:anywhere;font:11px/1.5 ui-monospace,Consolas,monospace;max-height:230px;overflow:auto}.country-box{margin-top:12px}.motor-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.motor-card{border:1px solid #25374a;border-radius:11px;background:#0a111c;padding:12px}.motor-card h3{margin:0 0 8px;font-size:13px}.motor-card .meter{height:8px;background:#1a2938;border-radius:8px;overflow:hidden;margin:8px 0}.motor-card .meter i{display:block;height:100%;background:linear-gradient(90deg,#62e6ff,#a4f36d)}.motor-values{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;color:var(--muted);font-size:11px}.motor-values b{color:var(--text);font-weight:700}.unit-empty{padding:14px;border:1px dashed #29465b;border-radius:10px;color:var(--muted)}.server-footer{display:flex;justify-content:space-between;gap:12px;color:#657b94;font-size:10px;padding:18px 0}
 .event-list{list-style:none;padding:0;margin:0;display:grid;gap:8px;max-height:430px;overflow-y:auto}.event-row{display:grid;grid-template-columns:72px 100px minmax(100px,.55fr) minmax(0,1.45fr);gap:10px;align-items:start;padding:10px 12px;border:1px solid #25374a;border-radius:9px;background:#0a111c;font-size:12px}.event-row time,.event-user{color:var(--muted)}.event-kind{color:var(--cyan);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.04em}.event-detail{overflow-wrap:anywhere;white-space:pre-wrap}.log-row{display:grid;grid-template-columns:78px 70px minmax(0,1fr);gap:10px;align-items:start;padding:10px 12px;border:1px solid #25374a;border-radius:9px;background:#0a111c;font-size:12px}.log-row time{color:var(--muted)}.log-level{font-size:10px;font-weight:800;letter-spacing:.05em}.log-level.error{color:var(--red)}.log-level.info{color:var(--cyan)}.log-message{overflow-wrap:anywhere;white-space:pre-wrap}
 .event-layout{display:grid;grid-template-columns:minmax(0,1fr) 190px;gap:14px;align-items:start}.event-filters{padding:12px;border:1px solid var(--line);border-radius:11px;background:#0c1522}.event-filters h3{margin:0 0 10px;font-size:12px}.event-filter{display:flex;align-items:center;gap:8px;padding:5px 0;color:#c9d6e5;font-size:12px}.event-filter input{width:auto;margin:0;accent-color:var(--cyan)}.event-toolbar{display:flex;justify-content:flex-end;margin-bottom:10px}.event-toolbar button{padding:.5rem .75rem;font-size:12px}
 @media(max-width:850px){.hero,.layout{grid-template-columns:1fr}.hero{gap:20px;padding-top:30px}.connection-card{max-width:none}}@media(max-width:560px){.shell{padding:0 14px 28px}.topbar{height:68px}.topmeta{gap:8px}.live-tag{font-size:9px}.hero h1{font-size:37px}.stats{gap:7px}.stat{padding:12px 10px}.panel{padding:15px}.voice-card{grid-template-columns:34px 1fr}.voice-level{grid-column:2}.field.token{min-width:100%}.event-layout{grid-template-columns:1fr}.event-filters{order:-1}.event-filters form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 10px}.event-row{grid-template-columns:60px 1fr;gap:6px}.event-user,.event-detail{grid-column:2}.event-kind{grid-column:1;grid-row:2}.log-row{grid-template-columns:60px 1fr;gap:6px}.log-message{grid-column:2}}
@@ -835,7 +873,7 @@ input{border:1px solid #31435a;background:#0a1220;color:var(--text);padding:.65r
 <section class="panel business-panel" data-units="regalos turbo-regalos"><header><h2><span class="icon">🎁</span> Regalos y turbo de regalos</h2><span class="pill">CONTROL</span></header><p class="subtle">Total recibidos: <b id="giftUnitCount">0</b></p><div class="form-row"><label class="field">Avance total del turbo por regalos (%)<input id="gift" type="number" min="0" max="100" value="6"></label><button class="primary" id="saveGiftTurbo">Guardar turbo de regalos</button></div></section>
 <section class="panel business-panel" data-units="equipos turbo-equipos"><header><h2><span class="icon">🐢</span> Equipos y turbo del contador</h2><span class="pill">MOTOR</span></header><div class="form-row"><label class="field">Avance del turbo por taps (%)<input id="tap" type="number" min="0" max="100" value="20"></label><button class="primary" id="saveTapTurbo">Guardar turbo de equipos</button><button data-command="turbo-down">Turbo −</button><button data-command="turbo-up">Turbo +</button></div><div class="motor-grid" id="teamTelemetry"><div class="unit-empty">Esperando valores del motor…</div></div></section>
 <section class="panel business-panel" data-units="motor"><header><h2><span class="icon">⚙</span> Motor en tiempo real</h2><span class="pill" id="motorStatus">SIN TELEMETRÍA</span></header><p class="subtle">Valores actuales reportados por el overlay y retransmitidos por el servidor.</p><div class="stats"><article class="stat"><span class="stat-label">Fase</span><strong id="motorPhase">—</strong><small id="motorUpdated">Esperando al overlay</small></article><article class="stat"><span class="stat-label">Duración</span><strong id="motorElapsed">—</strong><small>Tiempo de carrera</small></article><article class="stat"><span class="stat-label">Inactividad</span><strong id="motorIdle">—</strong><small>Cuenta regresiva</small></article></div><p class="subtle">Ganador: <b id="motorWinner">—</b> · Eventos procesados: <b id="motorEvents">0</b></p><div class="motor-grid" id="motorTeams"><div class="unit-empty">El overlay debe estar abierto para publicar telemetría.</div></div><pre class="pre" id="motorStats">Estadísticas del motor: esperando datos…</pre></section>
-<section class="panel business-panel" data-units="torneos"><header><h2><span class="icon">🏆</span> Torneos</h2><span class="pill">VOTACIÓN</span></header><label class="checkrow"><input id="tournamentEnabled" type="checkbox"> Registrar votos de comentarios reales</label><div class="toolbar"><button class="primary" id="saveTournament">Guardar configuración</button></div></section>
+<section class="panel business-panel" data-units="torneos"><header><h2><span class="icon">🏆</span> Torneos</h2><span class="pill">VS Y VOTACIÓN</span></header><label class="checkrow"><input id="tournamentEnabled" type="checkbox"> Registrar votos de comentarios reales</label><div class="toolbar"><button class="primary" id="saveTournament">Guardar configuración</button></div><h3>VS habilitados</h3><p class="subtle">Olimpia vs Cerro y Barcelona vs Real Madrid empiezan activos. Los cambios de VS se aplican cuando el contador de inactividad llega a cero.</p><div id="vsConfigList" class="vs-config-list"><div class="unit-empty">Cargando VS…</div></div><div class="toolbar"><button class="primary" id="saveVsConfig">Guardar VS activos</button></div><p class="message" id="vsConfigMessage" role="status"></p></section>
 <section class="panel business-panel" data-units="estadisticas"><header><h2><span class="icon">📊</span> Estadísticas por país y presencia</h2><span class="pill">LIVE DATA</span></header><pre class="pre" id="countries">Esperando datos…</pre><div class="country-box"><span class="subtle">Estado del overlay</span><pre class="pre" id="presence">Verificando clientes…</pre></div></section>
 <section class="panel business-panel" data-units="voz"><header><h2><span class="icon">♫</span> Voz en off</h2><span class="pill">PRIORIDADES EN VIVO</span></header><p class="subtle">Los números más bajos hablan primero. Un regalo interrumpe los mensajes de menor prioridad.</p><ol class="voice-order" id="voiceOrder"></ol><p class="voice-hint">🎁 Cada regalo se agradece. Desde 1 diamante suena una alerta alegre. Luego: cambios de equipo → comentarios → saludos/acciones → avance y distancia a la meta.</p><p class="message" id="voiceError" role="status"></p></section>
 <section class="panel business-panel" data-units="honor"><header><h2><span class="icon">🥇</span> Cuadro de honor</h2><span class="pill">TORNEOS</span></header><pre class="pre" id="honorBoard">Cargando resultados guardados…</pre></section>
@@ -846,6 +884,20 @@ input{border:1px solid #31435a;background:#0a1220;color:var(--text);padding:.65r
 <script>
 const $=s=>document.querySelector(s),headers=()=>({'content-type':'application/json'}),msg=t=>$('#message').textContent=t;
 async function admin(path,body){const r=await fetch(path,{method:'POST',headers:headers(),credentials:'same-origin',body:JSON.stringify(body||{})});const j=await r.json();if(!r.ok)throw Error(j.message||r.status);return j}
+async function loadVsConfig(){
+ const list=$('#vsConfigList'),status=$('#vsConfigMessage');
+ list.textContent='Cargando VS…';status.textContent='';
+ try{
+  const response=await fetch('/api/admin/vs-config',{credentials:'same-origin',cache:'no-store'}),data=await response.json();
+  if(!response.ok)throw Error(data.message||response.status);
+  list.replaceChildren();
+  data.list.forEach(duel=>{
+   const label=document.createElement('label'),input=document.createElement('input'),name=document.createElement('span');
+   label.className='checkrow';input.type='checkbox';input.dataset.vsKey=duel.k;input.checked=!!duel.on;name.textContent=duel.label;
+   label.append(input,name);list.append(label);
+  });
+ }catch(error){list.textContent=error.message;status.textContent='No se pudo cargar la configuración de VS.'}
+}
 $('#logout').onclick=async()=>{await fetch('/api/admin/session',{method:'DELETE',credentials:'same-origin'});location.replace('/backend')};
 const unitButtons=[...document.querySelectorAll('[data-unit]')];
 function showUnit(unit,scrollToPanel=false){
@@ -854,6 +906,7 @@ function showUnit(unit,scrollToPanel=false){
  panels.forEach(panel=>{panel.hidden=!panel.dataset.units.split(/\\s+/).includes(unit)});
  if(scrollToPanel)panels.find(panel=>panel.dataset.units.split(/\\s+/).includes(unit))?.scrollIntoView({behavior:'smooth',block:'start'});
  if(unit==='logs')loadTechnicalLogs();
+ if(unit==='torneos')loadVsConfig();
 }
 $('#businessUnits').addEventListener('click',event=>{
  const button=event.target.closest('button[data-unit]');
@@ -873,6 +926,11 @@ $('#reconnect').onclick=async()=>{try{await admin('/api/admin/reconnect');msg('R
 $('#saveGiftTurbo').onclick=async()=>{try{await admin('/api/admin/game-settings',{giftTurboProgress:+$('#gift').value,tapTurboProgress:+$('#tap').value});msg('Turbo de regalos guardado')}catch(e){msg(e.message)}};
 $('#saveTapTurbo').onclick=async()=>{try{await admin('/api/admin/game-settings',{giftTurboProgress:+$('#gift').value,tapTurboProgress:+$('#tap').value});msg('Turbo del contador de equipos guardado')}catch(e){msg(e.message)}};
 $('#saveTournament').onclick=async()=>{try{await admin('/api/admin/tournament-enabled',{enabled:$('#tournamentEnabled').checked});msg('Configuración de Torneo Libre guardada')}catch(e){msg(e.message)}};
+$('#saveVsConfig').onclick=async()=>{
+ const enabledKeys=Array.from(document.querySelectorAll('#vsConfigList input[type="checkbox"]:checked')).map(input=>input.dataset.vsKey);
+ try{await admin('/api/admin/vs-config',{enabledKeys});$('#vsConfigMessage').textContent='Configuración guardada. El cambio de VS espera al contador de inactividad.'}
+ catch(error){$('#vsConfigMessage').textContent=error.message}
+};
 $('#reset').onclick=async()=>{if(!confirm('¿Reiniciar el cronómetro y el contador de regalos?'))return;try{await admin('/api/admin/game-tools/reset');msg('Cronómetro reiniciado')}catch(e){msg(e.message)}};
 document.querySelectorAll('[data-command]').forEach(b=>b.onclick=async()=>{try{await admin('/api/admin/game-command',{command:b.dataset.command});msg('Comando enviado')}catch(e){msg(e.message)}});
 const voiceInfo={gift:['Regalo','Agradece el regalo y activa la alerta alegre desde 1 diamante.','🎁'],move:['Cambio de equipo','Anuncia cuando alguien se une o cambia de equipo.','🔁'],chat:['Comentario','Lee el comentario real del usuario.','💬'],welcome:['Ingreso al live','Da la bienvenida a quien entra.','👋'],action:['Acciones','Agradece likes, seguidores y compartidos.','⚡'],match:['Relato de carrera','Informa posiciones, metros restantes y llegada a la meta.','🏁']};
@@ -1329,6 +1387,36 @@ async function handle(req, res) {
     safeJson(res, 200, { enabled: settings.tournamentEnabled });
     return;
   }
+  if (path === '/api/admin/vs-config' && req.method === 'GET') {
+    if (!requireAdmin(req, res)) return;
+    const stored = await getState('cluss.vs');
+    safeJson(res, 200, { list: vsConfigView(stored.value).list });
+    return;
+  }
+  if (path === '/api/admin/vs-config' && req.method === 'POST') {
+    if (!requireAdmin(req, res)) return;
+    const body = await readBody(req);
+    const allowed = new Set(DEFAULT_VS.map(item => item.k));
+    const enabledKeys = body.enabledKeys;
+    if (!Array.isArray(enabledKeys) || enabledKeys.length > DEFAULT_VS.length ||
+        enabledKeys.some(key => typeof key !== 'string' || !allowed.has(key)) ||
+        new Set(enabledKeys).size !== enabledKeys.length) {
+      safeJson(res, 400, { message: 'La lista de VS activos no es válida.' });
+      return;
+    }
+    const stored = await getState('cluss.vs');
+    const previous = vsConfigView(stored.value);
+    const enabled = new Set(enabledKeys);
+    await setState('cluss.vs', {
+      v: DEFAULT_VS_CONFIG_VERSION,
+      cur: previous.cur,
+      list: DEFAULT_VS.map(item => ({ k: item.k, on: enabled.has(item.k) })),
+      st: previous.st
+    });
+    broadcastTool('vs-config', { enabledKeys });
+    safeJson(res, 200, { ok: true, enabledKeys });
+    return;
+  }
   if (path === '/api/admin/tournament-enabled' && req.method === 'POST') {
     if (!requireAdmin(req, res)) return;
     const body = await readBody(req);
@@ -1419,6 +1507,7 @@ export {
   dedupeEvent,
   identifyCountry,
   socialEventType,
+  handleTikTokEvent,
   appendRecords,
   stateSnapshot,
   handle,

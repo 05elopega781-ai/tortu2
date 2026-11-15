@@ -568,8 +568,8 @@ body{margin:0;background:var(--page);font-family:Inter,system-ui,sans-serif;colo
 .pod .pr{position:absolute;background:#2b1708;color:#ffd566;font:800 8px/11px Inter,sans-serif;text-align:center;border:1px solid #ffd566;z-index:2}
 .hd .cn{letter-spacing:-.2px}
 .evs{display:flex;gap:2px;padding:3px 4px;background:linear-gradient(#7a4e2a,#5a3a1e);border:2px solid #3f2713;border-radius:10px;box-shadow:inset 0 1px 3px rgba(0,0,0,.5)}
-.gift-total{position:absolute;right:10px;bottom:calc(var(--sb,0px) + 56px);z-index:25;box-sizing:border-box;width:78px;height:60px;min-height:60px;padding:3px;border:3px solid #ffe14d;border-radius:12px;background:linear-gradient(145deg,#643600,#241408);color:#fff;box-shadow:0 0 0 2px rgba(0,0,0,.8),0 0 15px rgba(255,209,59,.8);gap:0;justify-content:center}
-.gift-total span{font-size:31px;font-weight:900;line-height:1;font-variant-numeric:tabular-nums;color:#ffe14d;text-shadow:0 2px 2px #000}
+.gift-total{position:absolute;right:8px;bottom:calc(var(--sb,0px) + 8px);z-index:25;box-sizing:border-box;width:40px;height:28px;min-height:28px;padding:2px;border:2px solid #ffe14d;border-radius:7px;background:linear-gradient(145deg,#643600,#241408);color:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.8),0 0 6px rgba(255,209,59,.8);gap:0;justify-content:center}
+.gift-total span{font-size:7px;font-weight:900;line-height:1;font-variant-numeric:tabular-nums;color:#ffe14d;text-shadow:0 1px 1px #000}
 .st{flex:1;min-width:0;display:flex;flex-direction:row;align-items:center;justify-content:center;gap:3px;line-height:1}
 .st b{font-weight:400}
 .st span{font:800 11px Inter,sans-serif;color:#fff;text-shadow:0 1px 1px #000;white-space:nowrap}
@@ -643,7 +643,7 @@ body{margin:0;background:var(--page);font-family:Inter,system-ui,sans-serif;colo
 .ev .ua.hero.bt{font-size:26px}
 .fan-alerts{position:absolute;inset:0;z-index:11;pointer-events:none;overflow:visible}
 .fan-alert{position:absolute;left:var(--x);top:var(--y);transform:translate(-50%,-50%);display:flex;align-items:center;gap:3px;max-width:96%;padding:2px 5px;border:1px solid var(--c,#3f2713);border-radius:10px;background:rgba(255,255,255,.95);color:#2a2018;box-shadow:0 2px 5px rgba(0,0,0,.5);white-space:nowrap;animation:fanAlertIn .2s ease-out}
-.fan-alert .ua.hero{position:relative;display:grid;place-items:center;flex:none;width:25px;height:29px;border:2px solid var(--c,#3f2713);border-radius:50%;overflow:hidden;background:#eee;font-size:13px;line-height:1}
+.fan-alert .ua.hero{position:relative;display:grid;place-items:center;flex:none;width:32px;height:36px;border:2px solid var(--c,#3f2713);border-radius:50%;overflow:hidden;background:#eee;font-size:16px;line-height:1}
 .fan-alert .ua.hero img{width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .15s ease-out}
 .fan-alert .eb{font-size:13px}
 .fan-alert .en{max-width:54px;overflow:hidden;text-overflow:ellipsis;font:800 7px/1.1 Inter,sans-serif}
@@ -1926,7 +1926,7 @@ function eggEl(u,t,cls){ /* un avatar: foto si hay, si no la inicial; los bots l
  if(u.vip)el.classList.add('vip');
  if((cls==='egg'||cls==='fg')&&!u.bot&&u.key&&T[t]&&topOf(t)===u.key)el.classList.add('top'); /* mejor puntaje del equipo: aro dorado en el nido */
  if(u.bot){el.classList.add('bt');el.textContent='🐢';el.title=u.name+' (bot)';el.style.setProperty('--b','hsl('+u.h+',45%,32%)')}
- else{let h=0;for(const ch of u.name)h=(h*31+ch.charCodeAt(0))%360;el.title='@'+u.name;el.textContent=[...u.name][0].toUpperCase();el.style.setProperty('--b','hsl('+h+',55%,40%)');setAvatarImage(el,u.url)}
+ else{let h=0;for(const ch of u.name)h=(h*31+ch.charCodeAt(0))%360;el.title='@'+u.name;el.textContent=[...u.name][0].toUpperCase();el.style.setProperty('--b','hsl('+h+',55%,40%)');setAvatarImage(el,u.url,u.key)}
  return el;
 }
 /* Huevo grande VACIO (blanco), hasta que haya un usuario real */
@@ -1944,7 +1944,7 @@ T.forEach((_,i)=>renderNest(i));
 /* nombre del regalo tal como lo informa TikTok (vacio si no lo trae) */
 const EI={chat:['💬','#8b8f99'],like:['❤️','#ff5a7a'],follow:['➕','#2f9bd6'],share:['↗️','#2f9bd6'],member:['👋','#16a34a']},eventTimers=new Set();
 /* PUNTAJE POR USUARIO: cada evento real lo aumenta. */
-const userScore=new Map(),SCORE={member:1,chat:5,like:1,follow:3,share:3,gift:0};window.__userScore=userScore; /* lo lee el cuadro de usuarios */
+const userScore=new Map(),SCORE={member:1,chat:5,like:1,follow:3,share:3,gift:0},avatarImageCache=new Map(),avatarUrlCache=new Map();window.__userScore=userScore; /* lo lee el cuadro de usuarios */
 /* Devuelve la clave del usuario con mas puntos del equipo t (aro dorado en el nido). */
 function topOf(t){let b=null,m=0;(recent[t]||[]).forEach(x=>{const s=userScore.get(x.key)||0;if(s>m){m=s;b=x.key}});return b}
 /* Alertas independientes: varias pueden convivir y cada una aparece en un punto distinto de la pista. */
@@ -1960,7 +1960,7 @@ function showEv(t,type,n,u){
  const name=String(info&&info.name||'');
  const url=String(info&&info.url||'');
  if(name)avatar.textContent=[...name][0].toUpperCase();
- if(/^https?:\/\//i.test(url))setAvatarImage(avatar,url);
+ if(/^https?:\/\//i.test(url))setAvatarImage(avatar,url,info&&info.key);
  avatar.title=name?'@'+name:'';
  const badge=document.createElement('b');badge.className='eb';badge.textContent=d[0]+(type==='like'&&Number(n)>1?' ×'+Math.floor(Number(n)):'');
  const label=document.createElement('span');label.className='en';label.textContent=name?(info&&info.username?'@'+info.username:name):'';
@@ -1973,27 +1973,59 @@ function trimNest(t){const l=recent[t],max=NEST_EGGS+FRONT_EGGS;
 /* La tortuga crece un poco con la actividad (tope x2.5) */
 function grow(i,d){if(!T[i])return;gs[i]=Math.min(2.5,gs[i]+d);$('#in'+i).style.setProperty('--s',gs[i])}
 /* Pone la foto https del usuario sobre su inicial; si falla la carga queda la inicial */
-function setAvatarImage(el,url){
+function setAvatarImage(el,url,userKey){
  if(!el||!/^https:\/\//i.test(url))return;
  const previous=el.querySelector('img');
  if(previous&&previous.getAttribute('src')===url)return;
  if(previous)previous.remove();
- const im=new Image();let attempts=0;im.referrerPolicy='no-referrer';im.alt='';im.decoding='async';im.setAttribute('fetchpriority','high');im.onload=()=>{
-  const reveal=()=>{if(im.isConnected&&im.naturalWidth>0)im.style.opacity='1'};
+ const cacheKey=String(userKey||url).toLowerCase();
+ let cached=avatarImageCache.get(cacheKey);
+ if(cached&&cached.url===url){
+  if(cached.loaded)appendCachedAvatar(el,cached);
+  else cached.targets.add(el);
+  return;
+ }
+ cached={url,loaded:false,image:new Image(),targets:new Set([el])};
+ avatarImageCache.delete(cacheKey);avatarImageCache.set(cacheKey,cached);
+ if(avatarImageCache.size>300)avatarImageCache.delete(avatarImageCache.keys().next().value);
+ const im=cached.image;let attempts=0;im.referrerPolicy='no-referrer';im.alt='';im.decoding='async';im.setAttribute('fetchpriority','high');im.onload=()=>{
+  const reveal=()=>{
+   if(avatarImageCache.get(cacheKey)!==cached||!im.naturalWidth)return;
+   cached.loaded=true;let originalUsed=false;
+   cached.targets.forEach(target=>{
+    const current=target.querySelector('img');
+    if(current&&current.getAttribute('src')===url)return;
+    if(current)current.remove();
+    if(!originalUsed){im.style.opacity='1';target.append(im);originalUsed=true}
+    else appendCachedAvatar(target,cached);
+   });
+   cached.targets.clear();
+  };
   if(typeof im.decode==='function')im.decode().then(reveal,reveal);else reveal();
  };im.onerror=()=>{
-  if(attempts<2&&el.isConnected){attempts++;setTimeout(()=>{if(im.isConnected)im.src=url},500*attempts)}
-  else im.remove()
- };el.append(im);im.src=url;
+  if(attempts<2){attempts++;setTimeout(()=>{if(avatarImageCache.get(cacheKey)===cached)im.src=url},500*attempts)}
+  else if(avatarImageCache.get(cacheKey)===cached){avatarImageCache.delete(cacheKey);im.remove()}
+ };im.src=url;
+}
+function appendCachedAvatar(el,cached){
+ const current=el.querySelector('img');
+ if(current&&current.getAttribute('src')===cached.url)return;
+ if(current)current.remove();
+ const im=new Image();im.referrerPolicy='no-referrer';im.alt='';im.decoding='async';im.setAttribute('fetchpriority','high');im.style.opacity='0';im.onload=()=>{
+  const reveal=()=>{if(im.isConnected&&im.naturalWidth>0)im.style.opacity='1'};
+  if(typeof im.decode==='function')im.decode().then(reveal,reveal);else reveal();
+ };im.onerror=()=>im.remove();el.append(im);im.src=cached.url;
 }
 /* Un evento REAL: su usuario pasa al frente del nido y el anterior baja a los huevos (el bot nunca llega aqui) */
 function avatar(e){
  if(!e||e.bot||!['member','chat','gift','like','follow','share'].includes(e.type))return;
  const username=String(e.username||'').trim(),displayName=String(e.displayName||'').trim(),u=username||displayName;if(!u)return;
  const k=(username||'display:'+displayName).toLowerCase(),t=supportTeamFor(k);
- const url=String(e.profilePictureUrl||e.profilePicture||e.avatarUrl||e.avatar||e.userImage||e.imageUrl||'');
+ const receivedUrl=String(e.profilePictureUrl||e.profilePicture||e.avatarUrl||e.avatar||e.userImage||e.imageUrl||'');
+ if(receivedUrl&&/^https:\/\//i.test(receivedUrl)){avatarUrlCache.delete(k);avatarUrlCache.set(k,receivedUrl);if(avatarUrlCache.size>300)avatarUrlCache.delete(avatarUrlCache.keys().next().value)}
+ const url=receivedUrl||avatarUrlCache.get(k)||'';
  if(t==null||!T[t])return;
- if(url){const layer=$('#event-alerts');if(layer)layer.querySelectorAll('.fan-alert').forEach(alert=>{if(alert.dataset.userKey===k)setAvatarImage(alert.querySelector('.ua.hero'),url)})}
+ if(url){const layer=$('#event-alerts');if(layer)layer.querySelectorAll('.fan-alert').forEach(alert=>{if(alert.dataset.userKey===k)setAvatarImage(alert.querySelector('.ua.hero'),url,k)})}
  known.set(k,{key:k,name:u,url:url||(known.get(k)&&known.get(k).url)||'',t});
  if(over)return;
  const sc=(userScore.get(k)||0)+(SCORE[e.type]||0)*(e.type==='like'?Math.max(1,Math.floor(Number(e.activityCount))||1):1);userScore.set(k,sc); /* cada evento sube su puntaje */
@@ -2016,7 +2048,7 @@ function renderPod(t){
  const l=[...known.values()].filter(x=>x.t===t).sort((a,b)=>(userScore.get(b.key)||0)-(userScore.get(a.key)||0)).slice(0,3);
  for(let k=0;k<3;k++){
   const u=l[k],w=document.createElement('span');w.className='pw pw'+(k+1);
-  let el;if(u){el=eggEl(u,t,'pd');el.title='#'+(k+1)+' @'+u.name+' · '+(userScore.get(u.key)||0)+' pts'}else{el=document.createElement('span');el.className='ua pd blank'}
+  let el;  if(u){el=eggEl(u,t,'pd');el.title='#'+(k+1)+' @'+u.name+' · '+(userScore.get(u.key)||0)+' pts'}else{el=document.createElement('span');el.className='ua pd blank'}
   w.append(el);
   const sp=document.createElement('span');sp.className='ps';sp.textContent=u?formatAvatarScore(userScore.get(u.key)||0):'0';w.append(sp); /* puntaje del avatar */
   if(k===0&&u){const c=document.createElement('span');c.className='pc';c.textContent='👑';w.append(c)}
@@ -2056,6 +2088,11 @@ win=function(i){
   h.after(d)}
  logStat({type:'round-end',winner:T[i].id,duel:DUELO,champion:isFinal&&P.wins[i]>=needed}); /* guarda la ronda (y cierra el torneo si hay campeon) */
  if(P.wins[i]>=needed)champion(i);
+ else if(tournamentMode==='clasico'&&idleJump){ /* si vencio la inactividad, termina la serie y avanza al siguiente VS */
+  clearTimeout(rs);rs=setTimeout(nextMatch,5500);
+  const h2=$('#win h2');if(h2)h2.textContent='Cambio de VS por inactividad';
+  toast('Inactividad agotada · siguiente VS','⏱️');
+ }
  else if(tournamentMode==='clasico'){ /* serie abierta: se juega otro partido contra el mismo rival (maximo 3) */
   const jugados=P.wins[0]+P.wins[1];clearTimeout(rs);rs=setTimeout(reset,5500);
   const h2=$('#win h2');if(h2)h2.innerHTML='¡'+T[i].n+'<br>GANA EL PARTIDO '+jugados+'!';
@@ -2126,6 +2163,7 @@ reset=function(){
  const start=()=>{
   if(request!==raceStartRequest)return;
   if(window.gamiFans&&typeof window.gamiFans.reset==='function')window.gamiFans.reset();
+  resetTeamEventTotals();
   _resetTurboLimit.apply(context,args);raceStartedAt=performance.now();raceEndedAt=null;lastTick=raceStartedAt;raceReady=true;
  };
  let check;
@@ -2249,6 +2287,10 @@ function renderTeamEventTotal(team){
  const label='Interacciones totales de '+T[team].n+': '+total;
  row.title=label;row.setAttribute('aria-label',label);
  row.querySelector('b').textContent=stFmt(total);
+}
+function resetTeamEventTotals(){
+ teamEventTotals.clear();
+ T.forEach((_,index)=>renderTeamEventTotal(index));
 }
 window.addTeamEventTotal=addTeamEventTotal;
 window.renderTeamEventTotal=renderTeamEventTotal;
@@ -3544,7 +3586,9 @@ setInterval(()=>{try{if(over||document.hidden)return;let best=null;pts.forEach((
 #honor .ct{font:900 17px/1 Inter,sans-serif;color:#ffe14d;text-shadow:0 1px 2px #000}
 #honor .sl.hit .av{animation:hnPop .6s ease-out}
 @keyframes hnPop{0%{transform:scale(.4)}60%{transform:scale(1.25)}100%{transform:scale(1)}}
-@media (prefers-reduced-motion:reduce){#honor,#honor .sl.hit .av{animation:none}}</style>
+@keyframes hnRosePulse{50%{transform:scale(1.18)}}
+#honor .av.rose{font-size:27px!important;opacity:1!important;animation:hnRosePulse 1s ease-in-out infinite!important}
+@media (prefers-reduced-motion:reduce){#honor,#honor .sl.hit .av,#honor .av.rose{animation:none!important}}</style>
 <script>
 (function(){
 const side=document.querySelector('.side');if(!side)return;
@@ -3553,15 +3597,14 @@ box.innerHTML='<div class="hh">🏅 HONOR</div><div class="pd" id="hnPd"></div>'
 const ref=side.querySelector('.bub')||side.firstChild;side.insertBefore(box,ref);
 const pd=box.querySelector('#hnPd');
 const esc=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const MED=['🥇','🥈','🥉'];
 let C=new Map(),hit='',last=''; /* HONOR: solo se muestra el ULTIMO usuario que envio un regalo; si otro envia, lo reemplaza */
-const av=(url,i)=>/^https:/.test(url||'')?`<img class="av" alt="" src="${esc(url)}" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'av',textContent:'💛'}))">`:`<div class="av">${MED[i]}</div>`;
+const av=url=>/^https:/.test(url||'')?`<img class="av" alt="" src="${esc(url)}" onerror="this.replaceWith((()=>{const r=document.createElement('div');r.className='av rose';r.setAttribute('aria-hidden','true');r.textContent='🌹';return r})())">`:`<div class="av rose" aria-hidden="true">🌹</div>`;
 const rango=n=>n>=10?['👑 LEYENDA','#ff4d6d']:n>=3?['🔥 FANÁTICO','#ff9a1f']:['⭐ HINCHA','#ffd34d'];
 function pinta(){const e=last&&C.get(last);
- if(!e){pd.innerHTML=`<div class="sl s1 vac">${av('',0)}<div class="tx"><span class="un">—</span></div></div>`;return}
+ if(!e){pd.innerHTML=`<div class="sl s1 vac">${av('')}</div>`;return}
  const tm=(e.t>=0&&T[e.t])?T[e.t]:null,col=tm?(tm.c==='#f1f1f1'?'#e5e5e5':tm.c):'#ffe14d',rg=rango(e.n);
  let fl='';try{if(tm)fl=`<svg class="hflag" viewBox="0 0 40 26" aria-hidden="true">${flag(tm.id,0,0,40,26)}</svg>`}catch(x){}
- pd.innerHTML=`<div class="sl s1 gm${last===hit?' hit':''}" style="--tc:${col}">${fl}<div class="avw">${av(e.url,0)}</div><div class="tx"><span class="un">@${esc(last)}</span>${tm?`<span class="cl">${esc(tm.n)}</span>`:''}<span class="rg" style="--rc:${rg[1]}">${rg[0]}</span><span class="ct">🎁 ×${e.n}</span></div></div>`}
+ pd.innerHTML=`<div class="sl s1 gm${last===hit?' hit':''}" style="--tc:${col}">${fl}<div class="avw">${av(e.url)}</div><div class="tx"><span class="un">@${esc(last)}</span>${tm?`<span class="cl">${esc(tm.n)}</span>`:''}<span class="rg" style="--rc:${rg[1]}">${rg[0]}</span><span class="ct">🎁 ×${e.n}</span></div></div>`}
 function honra(e){const u=String(e.username),n=Math.max(1,+e.activityCount||1);
  const url=e.profilePictureUrl||e.profilePicture||e.avatarUrl||e.avatar||e.userImage||e.imageUrl||'';
  const c=C.get(u)||{n:0,url:'',t:-1};c.n+=n;if(url)c.url=url;let tt=-1;try{tt=recentChatTeam(u.toLowerCase())}catch(x){}if(tt>=0)c.t=tt;C.set(u,c);last=u;hit=u;pinta();hit=''}
@@ -3614,7 +3657,7 @@ function pinta(){try{
   let st;if(!top)st=en?'Go for #1!':'¡A por la 1ª!';else if(tie)st=en?'TIE!':'¡EMPATE!';else if(rk===1)st=en?`LEADER +${gap}`:`¡LÍDER! +${gap}`;else st=en?`${gap} behind`:`a ${gap} 🏆 del líder`;
   const live=act.includes(id);
   const lb=rk===1?(en?'1ST PLACE':'PRIMER PUESTO'):(en?'2ND PLACE':'SEGUNDO PUESTO');
-  return `<div class="cc p${i+1} r${rk}${live?' on':''}${n?'':' z'}${up?' up':''}" aria-label="${lb} · ${esc(nom(id))}: ${n}"><span class="cc-lb">${lb}</span><span class="cc-rk">${rk===1?'🥇':'🥈'}</span>${i===0?'<span class="cc-cr">👑</span>':''}${live?`<span class="cc-live" title="${en?'Racing':'En pista'}"></span>`:''}<span class="cc-row"><span class="cc-fl">${ban(id)}</span><span class="cc-n d${String(n).length}">${n}</span></span><span class="cc-nm">${esc(nom(id))}</span><span class="cc-bar"><i style="width:${pct}%"></i></span><span class="cc-st">${st}</span>${up?'<b class="cc-plus">+1 🏆</b>':''}</div>`};
+  return `<div class="cc p${i+1} r${rk}${live?' on':''}${n?'':' z'}${up?' up':''}" data-team-id="${esc(id)}" aria-label="${lb} · ${esc(nom(id))}: ${n}"><span class="cc-lb">${lb}</span><span class="cc-rk">${rk===1?'🥇':'🥈'}</span>${i===0?'<span class="cc-cr">👑</span>':''}${live?`<span class="cc-live" title="${en?'Racing':'En pista'}"></span>`:''}<span class="cc-row"><span class="cc-fl">${ban(id)}</span><span class="cc-n d${String(n).length}">${n}</span></span><span class="cc-fans" data-team-id="${esc(id)}">👥 <b>0</b></span><span class="cc-nm">${esc(nom(id))}</span><span class="cc-bar"><i style="width:${pct}%"></i></span><span class="cc-st">${st}</span>${up?'<b class="cc-plus">+1 🏆</b>':''}</div>`};
  const h=`<div class="hh">🏆 ${en?'CUPS':'COPAS'}${cn?' · '+esc(cn):''}</div>`+a.map(card).join('');
  if(h!==ult){ult=h;box.innerHTML=h;a.forEach(id=>{prev[id]=cp[id]||0})}}catch(e){}}
 setInterval(pinta,1500);pinta();
@@ -4286,6 +4329,10 @@ render();
    if(Number.isSafeInteger(state.timerStartedAt))timerStartedAt=state.timerStartedAt;
    tick();
   }catch(error){console.error('No se pudo actualizar el estado de herramientas del servidor.',error)}
+ });
+ toolsSource.addEventListener('vs-config',event=>{
+  try{window.dispatchEvent(new CustomEvent('vs-config-update',{detail:JSON.parse(event.data)}))}
+  catch(error){console.error('No se pudo actualizar la configuración de VS.',error)}
  });
  toolsSource.addEventListener('game-command',event=>{
   try{
@@ -5263,9 +5310,9 @@ const safe=f=>{try{return f()}catch(e){return undefined}};
 const M=window.liveEventMonitor;
 if(!M||!safe(()=>CLASSIC_DEFS)||!safe(()=>SRV)||!safe(()=>T)||!safe(()=>P))return;
 const K='cluss.vs',key=(a,b)=>[a,b].sort().join('|');
-const STARTER_KEY=key('ol','cp'),CONFIG_VERSION=2;
+const STARTER_KEY=key('ol','cp'),STARTER_KEYS=new Set([STARTER_KEY,key('ucl-bc','ucl-rm')]),CONFIG_VERSION=3;
 const nmOf=id=>{const n=String(safe(()=>tournamentItem(id).n)||id);return n[0]+n.slice(1).toLowerCase()};
-const DEF=CLASSIC_DEFS.map(d=>({k:key(d[0],d[1]),a:d[0],b:d[1],n:d[2],on:key(d[0],d[1])===STARTER_KEY}));
+const DEF=CLASSIC_DEFS.map(d=>({k:key(d[0],d[1]),a:d[0],b:d[1],n:d[2],on:STARTER_KEYS.has(key(d[0],d[1]))}));
 /* ---------- LISTA + ESTADISTICAS (documento del SERVIDOR: GET/PUT /api/state/cluss.vs) ---------- */
 const raw=safe(()=>SRV.get(K,null))||{};
 const hasCurrentConfig=raw.v===CONFIG_VERSION;
@@ -5283,7 +5330,14 @@ function advance(){ /* siguiente VS HABILITADO de la lista; al final vuelve al p
  for(let i=1;i<=n;i++){const x=D.list[(p+i)%n];if(x.on)return x.k}
  return D.cur;
 }
-const curVS=()=>{let v=byKey(D.cur);if(!v||!v.on){D.cur=advance();v=byKey(D.cur);save()}return en().length?v:null}; /* sin ningun VS habilitado: no se interviene */
+const curVS=()=>byKey(D.cur)||null; /* el VS actual se conserva hasta que la inactividad llegue a cero */
+window.addEventListener('vs-config-update',event=>{
+ const enabledKeys=event.detail&&event.detail.enabledKeys;
+ if(!Array.isArray(enabledKeys))return;
+ const enabled=new Set(enabledKeys);
+ D.list.forEach(item=>{item.on=enabled.has(item.k)});
+ save();render();
+});
 /* ---------- MOTOR DE ESTADISTICAS: valor de interaccion de cada VS ---------- */
 const W={member:1,chat:5,like:1,follow:3,share:3,gift:10}; /* valor de cada evento REAL en el ranking (los bots no cuentan) */
 let R={ev:0,val:0,by:{}};
@@ -5316,7 +5370,7 @@ if(typeof nextMatch==='function'){const _nm=nextMatch;nextMatch=function(){ /* C
  safe(()=>{
   if(tournamentMode!=='clasico')return;
   const v=curVS();if(!v)return;const L=CLASSIC_DEFS.length,ix=CLASSIC_DEFS.findIndex(d=>key(d[0],d[1])===v.k);if(ix<0)return;
-  if(idleJump){classicFixtureIndex=ix;BR=brNew('clasico');P.br=BR;P.wins=[0,0];P.tournamentMode='clasico';idleJump=false} /* VS nuevo: serie nueva */
+  if(idleJump){classicFixtureIndex=ix;BR=brNew('clasico');P.br=BR;P.wins=[0,0];P.cl[v.k]={};P.tournamentMode='clasico';idleJump=false} /* VS nuevo: serie y copas nuevas */
   else if(!brCur())classicFixtureIndex=(ix-1+L)%L; /* serie terminada con copa: el original suma 1 y queda el MISMO VS (bucle) */
  });
  return _nm.apply(this,arguments)}}
@@ -5359,7 +5413,7 @@ pn.addEventListener('click',e=>{
  const b=e.target.closest('button');if(!b)return;
  if(b.hasAttribute('data-x')){pn.classList.remove('on');return}
  if(b.dataset.t){view=b.dataset.t;render();return}
- if(b.dataset.k){const x=byKey(b.dataset.k);if(x){x.on=!x.on;if(!x.on&&x.k===D.cur)D.cur=advance();save();render()}}
+ if(b.dataset.k){const x=byKey(b.dataset.k);if(x){x.on=!x.on;save();render()}}
 });
 if(foot){const bt=document.createElement('button');bt.className='sm';bt.id='bVs';bt.type='button';bt.textContent='🆚';bt.title='VS: lista, interacción y copas';
  bt.onclick=()=>{pn.classList.toggle('on');render()};foot.appendChild(bt)}
@@ -5403,21 +5457,18 @@ function onEvent(e){
 const _rx=M.receive;if(typeof _rx==='function')M.receive=function(e){const r=_rx.apply(this,arguments);safe(()=>onEvent(e));return r};
 /* icono de hinchas (dos figuras) + numero, debajo de la cuenta de copas de cada tarjeta */
 const ICON='<svg viewBox="0 0 24 16" aria-hidden="true"><circle cx="8" cy="4.6" r="3.1"/><path d="M1.5 15.5c0-3.7 2.9-6.2 6.5-6.2s6.5 2.5 6.5 6.2z"/><circle cx="17.2" cy="5.8" r="2.5"/><path d="M13.6 15.5c.2-2.7 1.9-4.7 4.4-4.7 2.6 0 4.4 2 4.5 4.7z"/></svg>';
-const norm=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/\s+/g,' ').trim();
 function paint(){
  const box=document.getElementById('copas');if(!box)return;
- const ids=[safe(()=>T[0].id),safe(()=>T[1].id)].filter(Boolean),want=new Map(ids.map(id=>[norm(safe(()=>tournamentItem(id).n)),id]));
+ const ids=new Set(T.map(team=>team.id));
  const rows=[];
- box.querySelectorAll('.cc').forEach(c=>{
-  const nmEl=c.querySelector('.cc-nm'),id=nmEl&&want.get(norm(nmEl.textContent));if(!id)return;
-  let el=c.querySelector('.cc-fans');
-  if(!el){el=document.createElement('span');el.className='cc-fans';const row=c.querySelector('.cc-row');if(row)row.after(el);else c.appendChild(el)}
+ box.querySelectorAll('.cc-fans').forEach(el=>{
+  const id=el.dataset.teamId;if(!ids.has(id))return;
   rows.push({el,n:count(id)});
  });
  const mx=Math.max(0,...rows.map(r=>r.n)),lead=rows.filter(r=>r.n===mx).length===1&&mx>0; /* se resalta solo si hay un lider claro */
  rows.forEach(r=>{
   const html=ICON+'<b>'+r.n+'</b>';if(r.el.dataset.v!==html){r.el.dataset.v=html;r.el.innerHTML=html}
-  r.el.title='Hinchas únicos con interacción en esta carrera';r.el.setAttribute('aria-label',r.el.title+': '+r.n);
+  r.el.title='Audiencia: usuarios únicos con interacción en esta carrera';r.el.setAttribute('aria-label',r.el.title+': '+r.n);
   r.el.classList.toggle('top',lead&&r.n===mx);
  });
 }

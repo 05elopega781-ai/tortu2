@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
-import { comboDelta, configuredUsername, dedupeEvent, handle, identifyCountry, normalizeTikTokEvent, normalizeUsername, socialEventType } from './server.js';
+import { comboDelta, configuredUsername, dedupeEvent, handle, handleTikTokEvent, identifyCountry, normalizeTikTokEvent, normalizeUsername, socialEventType } from './server.js';
 import voicePriority from './server/voice-priority.js';
 
 test('live event counters count events, not weighted interaction points', () => {
@@ -123,6 +123,228 @@ test('backend login protects the panel and admin APIs until a session cookie is 
     if (previousToken === undefined) delete process.env.BACKEND_ADMIN_TOKEN;
     else process.env.BACKEND_ADMIN_TOKEN = previousToken;
   }
+});
+
+test('backend VS settings default to the two requested fixtures and validate saved selections', async () => {
+  const previousToken = process.env.BACKEND_ADMIN_TOKEN;
+  process.env.BACKEND_ADMIN_TOKEN = 'vs-config-test-token';
+  const server = createServer((req, res) => void handle(req, res));
+  server.listen(0, '127.0.0.1');
+  await new Promise(resolve => server.once('listening', resolve));
+  const baseUrl = `http://127.0.0.1:${server.address().port}`;
+  let previousState;
+  let hadPreviousState = false;
+
+  try {
+    const savedState = await fetch(`${baseUrl}/api/state/cluss.vs`);
+    if (savedState.ok) {
+      hadPreviousState = true;
+      previousState = await savedState.json();
+    }
+    await fetch(`${baseUrl}/api/state/cluss.vs`, { method: 'DELETE' });
+
+    const login = await fetch(`${baseUrl}/api/admin/session`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ token: 'vs-config-test-token' })
+    });
+    const cookie = login.headers.get('set-cookie').split(';', 1)[0];
+    const headers = { cookie, 'content-type': 'application/json' };
+
+    const defaults = await fetch(`${baseUrl}/api/admin/vs-config`, { headers });
+    assert.equal(defaults.status, 200);
+    const defaultList = (await defaults.json()).list;
+    assert.equal(defaultList.length, 20);
+    assert.deepEqual(defaultList.filter(item => item.on).map(item => item.k), ['cp|ol', 'ucl-bc|ucl-rm']);
+
+    const saved = await fetch(`${baseUrl}/api/admin/vs-config`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ enabledKeys: ['ucl-bc|ucl-rm'] })
+    });
+    assert.equal(saved.status, 200);
+    const updated = await fetch(`${baseUrl}/api/admin/vs-config`, { headers });
+    assert.deepEqual((await updated.json()).list.filter(item => item.on).map(item => item.k), ['ucl-bc|ucl-rm']);
+
+    const invalid = await fetch(`${baseUrl}/api/admin/vs-config`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ enabledKeys: ['not-a-fixture'] })
+    });
+    assert.equal(invalid.status, 400);
+  } finally {
+    if (hadPreviousState) {
+      await fetch(`${baseUrl}/api/state/cluss.vs`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(previousState)
+      });
+    } else {
+      await fetch(`${baseUrl}/api/state/cluss.vs`, { method: 'DELETE' });
+    }
+    await new Promise(resolve => server.close(resolve));
+    if (previousToken === undefined) delete process.env.BACKEND_ADMIN_TOKEN;
+    else process.env.BACKEND_ADMIN_TOKEN = previousToken;
+  }
+});
+
+test('overlay retains the active VS until inactivity and resets cups only on the next VS', () => {
+  const html = readFileSync(new URL('./overlay.html', import.meta.url), 'utf8');
+  const script = html.match(/<script id="vs-motor-js">([\s\S]*?)<\/script>/)?.[1];
+  assert.ok(script);
+
+  const fixtures = [
+    ['ol', 'cp', 'Superclásico'],
+    ['ucl-bc', 'ucl-rm', 'El Clásico'],
+    ['lib-boc', 'lib-riv', 'Superclásico'],
+  ];
+  const listeners = new Map();
+  const app = { appendChild() {} };
+  const foot = { appendChild() {} };
+  const panelBody = {};
+  const panel = {
+    classList: { contains: () => false, toggle() {}, add() {}, remove() {} },
+    setAttribute() {},
+    addEventListener() {},
+    querySelector: () => panelBody,
+  };
+  const savedStates = [];
+  const window = {
+    liveEventMonitor: { completeRound() { return Promise.resolve(); } },
+    addEventListener(name, listener) { listeners.set(name, listener); },
+  };
+  let nextMatchCalls = 0;
+  const context = {
+    window,
+    document: {
+      getElementById: id => id === 'app' ? app : null,
+      querySelector: () => foot,
+      createElement: () => panel,
+    },
+    CLASSIC_DEFS: fixtures,
+    SRV: {
+      get: () => null,
+      set: (key, value) => savedStates.push({ key, value }),
+    },
+    T: [{ id: 'ol', n: 'Olimpia', c: '#fff' }, { id: 'cp', n: 'Cerro', c: '#f00' }],
+    P: { cl: { 'ucl-bc|ucl-rm': { 'ucl-bc': 4 } }, cp: { ol: 7 }, wins: [1, 0] },
+    tournamentItem: id => ({ n: id }),
+    tournamentMode: 'clasico',
+    classicFixtureIndex: 0,
+    BR: null,
+    brNew() {
+      const fixture = fixtures[context.classicFixtureIndex];
+      return { duel: fixture.slice(0, 2), r: [] };
+    },
+    brCur: () => null,
+    nextMatch() { nextMatchCalls++; },
+    reset() {},
+    lowActivityFinished: false,
+  };
+  runInNewContext(script, context);
+
+  const vs = window.gamiVS;
+  assert.deepEqual(Array.from(vs.data.list.filter(item => item.on), item => item.k), ['cp|ol', 'ucl-bc|ucl-rm']);
+  const currentKey = vs.data.cur;
+  listeners.get('vs-config-update')({ detail: { enabledKeys: ['ucl-bc|ucl-rm'] } });
+  assert.equal(vs.curVS().k, currentKey);
+  assert.equal(context.P.cl['ucl-bc|ucl-rm']['ucl-bc'], 4);
+
+  context.lowActivityFinished = true;
+  window.liveEventMonitor.completeRound('ol');
+  assert.equal(vs.data.cur, 'ucl-bc|ucl-rm');
+  assert.equal(context.P.cl['ucl-bc|ucl-rm']['ucl-bc'], 4);
+  context.nextMatch();
+  assert.equal(nextMatchCalls, 1);
+  assert.deepEqual(Array.from(context.P.wins), [0, 0]);
+  assert.equal(Object.keys(context.P.cl['ucl-bc|ucl-rm']).length, 0);
+  assert.deepEqual(context.P.cp, { ol: 7 });
+  assert.equal(JSON.stringify(context.P.br.duel), JSON.stringify(['ucl-bc', 'ucl-rm']));
+  assert.ok(savedStates.some(item => item.key === 'cluss.vs'));
+});
+
+test('honor avatar uses a pulsing TikTok rose without placeholder text when no photo exists', () => {
+  const html = readFileSync(new URL('./overlay.html', import.meta.url), 'utf8');
+  const marker = "const box=document.createElement('section');box.id='honor'";
+  const markerIndex = html.indexOf(marker);
+  assert.notEqual(markerIndex, -1);
+  const scriptStart = html.lastIndexOf('<script>', markerIndex);
+  const scriptEnd = html.indexOf('</script>', markerIndex);
+  const script = html.slice(scriptStart + '<script>'.length, scriptEnd);
+  let honorMarkup = '';
+  const pd = {};
+  Object.defineProperty(pd, 'innerHTML', {
+    get: () => honorMarkup,
+    set: value => { honorMarkup = value; },
+  });
+  const box = {
+    setAttribute() {},
+    querySelector: () => pd,
+    set innerHTML(value) { honorMarkup = value; },
+  };
+  const side = { firstChild: {}, querySelector: () => null, insertBefore() {} };
+  const context = {
+    document: {
+      querySelector: () => side,
+      createElement: () => box,
+    },
+    setInterval() {},
+    T: [],
+    recentChatTeam: () => -1,
+    handleLiveEntry() {},
+    reset() {},
+  };
+  runInNewContext(script, context);
+
+  assert.match(honorMarkup, /class="av rose" aria-hidden="true">🌹/);
+  assert.doesNotMatch(honorMarkup, /—/);
+  context.handleLiveEntry({ bot: false, type: 'gift', username: 'ana', activityCount: 1 });
+  assert.match(honorMarkup, /class="av rose" aria-hidden="true">🌹/);
+  assert.match(html, /@keyframes hnRosePulse/);
+});
+
+test('team event totals and cup audience reset to zero for every new race', () => {
+  const html = readFileSync(new URL('./overlay.html', import.meta.url), 'utf8');
+  const resetCode = html.match(/function resetTeamEventTotals\(\)\{[\s\S]*?\n\}/)?.[0];
+  assert.ok(resetCode);
+  const renderedTeams = [];
+  const eventTotals = new Map([['ol', 6], ['cp', 3]]);
+  const resetTotals = new Function(
+    'teamEventTotals', 'T', 'renderTeamEventTotal',
+    `${resetCode}; return resetTeamEventTotals;`
+  )(eventTotals, [{ id: 'ol' }, { id: 'cp' }], index => renderedTeams.push(index));
+  resetTotals();
+  assert.equal(eventTotals.size, 0);
+  assert.deepEqual(renderedTeams, [0, 1]);
+  assert.match(html, /resetTeamEventTotals\(\);\s*_resetTurboLimit/);
+  assert.match(html, /class="cc-fans" data-team-id="\$\{esc\(id\)\}">👥 <b>0<\/b>/);
+
+  const fansScript = html.match(/<script id="fans-copas-js">([\s\S]*?)<\/script>/)?.[1];
+  assert.ok(fansScript);
+  const audienceRows = ['ol', 'cp'].map(teamId => ({
+    dataset: { teamId },
+    classList: { toggle() {} },
+    setAttribute() {},
+    innerHTML: '',
+  }));
+  const window = {
+    liveEventMonitor: { receive(event) { return event; } },
+    __known: new Map([['ana', { t: 0 }]]),
+  };
+  const context = {
+    window,
+    document: { getElementById: () => ({ querySelectorAll: () => audienceRows }) },
+    SRV: { set() {} },
+    T: [{ id: 'ol' }, { id: 'cp' }],
+    setInterval() {},
+  };
+  runInNewContext(fansScript, context);
+  assert.match(audienceRows[0].innerHTML, /<b>0<\/b>/);
+  window.liveEventMonitor.receive({ type: 'chat', username: 'ana', bot: false });
+  assert.match(audienceRows[0].innerHTML, /<b>1<\/b>/);
+  window.gamiFans.reset();
+  assert.equal(window.gamiFans.count('ol'), 0);
+  assert.match(audienceRows[0].innerHTML, /<b>0<\/b>/);
 });
 
 test('backend exposes business-unit buttons and live motor telemetry', async () => {
@@ -364,6 +586,192 @@ test('TikTok events are normalized to the six allowed types without forwarding b
     user: { uniqueId: 'fan1', userDetails: { profilePictureUrls: 'https://example.test/late-avatar.jpg' } }
   })?.profilePictureUrl, 'https://example.test/late-avatar.jpg');
   assert.equal(normalizeTikTokEvent('share', { user: { displayId: 'fan2' } })?.username, 'fan2');
+});
+
+test('a late TikTok avatar travels through SSE and appears on the existing overlay alert after decoding', async () => {
+  const server = createServer((req, res) => void handle(req, res));
+  server.listen(0, '127.0.0.1');
+  await new Promise(resolve => server.once('listening', resolve));
+  const controller = new AbortController();
+  let reader;
+
+  class TestElement {
+    constructor(tagName, root = false) {
+      this.tagName = tagName.toUpperCase();
+      this.root = root;
+      this.parentElement = null;
+      this.children = [];
+      this.attributes = {};
+      this.dataset = {};
+      this.style = { opacity: '0', setProperty() {} };
+      this.className = '';
+      this.textContent = '';
+    }
+    get isConnected() { return this.root || Boolean(this.parentElement?.isConnected); }
+    get firstElementChild() { return this.children[0] || null; }
+    append(...elements) {
+      elements.forEach(element => {
+        element.parentElement = this;
+        this.children.push(element);
+      });
+    }
+    remove() {
+      if (!this.parentElement) return;
+      this.parentElement.children = this.parentElement.children.filter(child => child !== this);
+      this.parentElement = null;
+    }
+    setAttribute(name, value) { this.attributes[name] = String(value); }
+    getAttribute(name) { return name === 'src' && this.src ? this.src : this.attributes[name] || null; }
+    querySelector(selector) {
+      if (selector === 'img') return this.querySelectorAll('img')[0] || null;
+      return this.querySelectorAll(selector)[0] || null;
+    }
+    querySelectorAll(selector) {
+      const expected = selector.startsWith('.') ? selector.slice(1).split('.') : null;
+      const matches = element => expected
+        ? expected.every(className => element.className.split(/\s+/).includes(className))
+        : element.tagName.toLowerCase() === selector;
+      return this.children.flatMap(child => [
+        ...(matches(child) ? [child] : []),
+        ...child.querySelectorAll(selector)
+      ]);
+    }
+  }
+  class TestImage extends TestElement {
+    constructor() {
+      super('img');
+      this.naturalWidth = 0;
+      this.src = '';
+    }
+    decode() { return new Promise(resolve => { this.resolveDecode = resolve; }); }
+  }
+
+  const eventLayer = new TestElement('div', true);
+  const lane = { getBoundingClientRect: () => ({ left: 0, width: 180 }) };
+  const board = { getBoundingClientRect: () => ({ left: 0, width: 380 }) };
+  const html = readFileSync(new URL('./overlay.html', import.meta.url), 'utf8');
+  const extract = (pattern, name) => {
+    const source = html.match(pattern)?.[0];
+    assert.ok(source, `overlay function ${name} exists`);
+    return source;
+  };
+  const processSource = extract(/function processLiveEvent\(item\)\{[\s\S]*?\n\}(?=\nfunction receiveLiveEvent)/, 'processLiveEvent');
+  const receiveSource = extract(/function receiveLiveEvent\(payload\)\{[\s\S]*?\n\}(?=\nwindow\.liveEventMonitor)/, 'receiveLiveEvent');
+  const showSource = extract(/function showEv\(t,type,n,u\)\{[\s\S]*?\n\}/, 'showEv');
+  const imageSource = extract(/function setAvatarImage\(el,url,userKey\)\{[\s\S]*?\n\}/, 'setAvatarImage');
+  const cachedImageSource = extract(/function appendCachedAvatar\(el,cached\)\{[\s\S]*?\n\}/, 'appendCachedAvatar');
+  const avatarSource = extract(/function avatar\(e\)\{[\s\S]*?\n\}/, 'avatar');
+  const context = {
+    document: {
+      createElement: tagName => new TestElement(tagName),
+      querySelector: selector => selector === '#event-alerts' ? eventLayer
+        : selector === '#ln0' ? lane
+          : selector === '.board' ? board : null
+    },
+    Image: TestImage,
+    setTimeout: () => 1,
+    console,
+    window: {}
+  };
+  runInNewContext(`
+    const $ = selector => document.querySelector(selector);
+    const supportedLiveTypes = new Set(['member','chat','gift','like','follow','share']);
+    const liveEventIds = new Set(), pendingLiveEvents = [], receivedEvents = [], eventTimers = new Set();
+    const LIVE_EVENT_ID_CACHE_LIMIT = 64;
+    let localEventNumber = 0, liveEventProcessor = entry => avatar(entry);
+    const EI = {chat:['💬','#888'],like:['❤️','#f57'],follow:['➕','#29d'],share:['↗️','#29d'],member:['👋','#2a5']};
+    const T = [{id:'ol',n:'OLIMPIA',c:'#fff'},{id:'cp',n:'CERRO',c:'#38f'}];
+    const known = new Map(), userScore = new Map(), greeted = new Set(), seen = new Set(), recent = [[],[]];
+    const avatarImageCache = new Map(), avatarUrlCache = new Map();
+    const SCORE = {member:1,chat:5,like:1,follow:3,share:3,gift:0};
+    let over = false;
+    const supportTeamFor = () => 0, grow = () => {}, greet = () => {}, trimNest = () => {};
+    const renderNest = () => {}, renderPod = () => {}, toast = () => {}, who = value => value;
+    const A = {sfx(){}};
+    const recordReceivedEvent = (type,payload) => {
+      const item = {type,payload};
+      receivedEvents.push(item);
+      return item;
+    };
+    const addLiveEventStage = () => {}, trimReceivedEvents = () => {}, notifyReceivedEvents = () => {};
+    const recordLiveDiagnostic = () => {}, isLiveDiagnosticActive = () => false, snapshotLiveState = () => null;
+    ${processSource}
+    ${receiveSource}
+    ${showSource}
+    ${imageSource}
+    ${cachedImageSource}
+    ${avatarSource}
+    globalThis.receiveEvent = receiveLiveEvent;
+    globalThis.avatarCache = avatarImageCache;
+  `, context);
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+  async function readFrame() {
+    while (true) {
+      const boundary = buffer.indexOf('\n\n');
+      if (boundary >= 0) {
+        const frame = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        if (frame.startsWith('event:')) return frame;
+        continue;
+      }
+      const chunk = await reader.read();
+      assert.equal(chunk.done, false, 'SSE stream stays open');
+      buffer += decoder.decode(chunk.value, { stream: true });
+    }
+  }
+  async function receiveSseEvent() {
+    const frame = await readFrame();
+    const event = frame.match(/^event:\s*(.+)$/m)?.[1];
+    const data = frame.match(/^data:\s*(.+)$/m)?.[1];
+    assert.ok(data, `SSE ${event} frame contains data`);
+    return { event, payload: JSON.parse(data) };
+  }
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/events`, { signal: controller.signal });
+    assert.equal(response.status, 200);
+    reader = response.body.getReader();
+    assert.equal((await receiveSseEvent()).event, 'status');
+
+    const id = `avatar-test-${Date.now()}`;
+    handleTikTokEvent('member', { msgId: `${id}-member`, user: { nickname: 'Avatar Fan' } });
+    const first = await receiveSseEvent();
+    assert.equal(first.event, 'update');
+    const firstResult = context.receiveEvent(first.payload);
+    assert.equal(firstResult.state, 'processed', firstResult.error);
+    const existingAlert = eventLayer.querySelector('.fan-alert');
+    const existingAvatar = existingAlert.querySelector('.ua.hero');
+    assert.equal(existingAvatar.textContent, 'A');
+    assert.equal(existingAvatar.querySelector('img'), null);
+
+    handleTikTokEvent('follow', {
+      msgId: `${id}-follow`,
+      user: { nickname: 'Avatar Fan', profilePictureUrl: 'https://example.test/avatar.jpg' }
+    });
+    const second = await receiveSseEvent();
+    assert.equal(second.event, 'update');
+    assert.equal(second.payload.entry.profilePictureUrl, 'https://example.test/avatar.jpg');
+    assert.equal(context.receiveEvent(second.payload).state, 'processed');
+
+    const cache = context.avatarCache.get('display:avatar fan');
+    assert.ok(cache, 'the avatar is cached by the user identity');
+    assert.equal(cache.image.src, 'https://example.test/avatar.jpg');
+    assert.equal(existingAvatar.querySelector('img'), null, 'the initial remains while the shared image is loading');
+    cache.image.naturalWidth = 64;
+    cache.image.onload();
+    cache.image.resolveDecode();
+    await new Promise(resolve => setImmediate(resolve));
+    const image = existingAvatar.querySelector('img');
+    assert.ok(image, 'late avatar URL is attached to the already visible alert');
+    assert.equal(image.src, 'https://example.test/avatar.jpg');
+    assert.equal(image.style.opacity, '1', 'loaded avatar is revealed after decoding');
+  } finally {
+    controller.abort();
+    if (reader) await reader.cancel().catch(() => {});
+    await new Promise(resolve => server.close(resolve));
+  }
 });
 
 test('raw TikTok likes pass the frontend statistics and per-team tap counter', () => {
