@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
-import { comboDelta, identifyCountry, normalizeTikTokEvent, normalizeUsername, socialEventType } from './server.js';
+import { comboDelta, configuredUsername, identifyCountry, normalizeTikTokEvent, normalizeUsername, socialEventType } from './server.js';
 import voicePriority from './server/voice-priority.js';
 
 test('live event counters count events, not weighted interaction points', () => {
@@ -52,6 +52,18 @@ test('deployment check accepts the current signature and reloads a stale overlay
 test('username normalization strips leading @ and whitespace', () => {
   assert.equal(normalizeUsername('  @@ tortu  '), 'tortu');
   assert.equal(normalizeUsername('  '), '');
+});
+
+test('a username selected in the backend takes precedence over the environment default', () => {
+  const previous = process.env.TIKTOK_USERNAME;
+  process.env.TIKTOK_USERNAME = 'default_account';
+  try {
+    assert.equal(configuredUsername('  @selected_account  '), 'selected_account');
+    assert.equal(configuredUsername(''), 'default_account');
+  } finally {
+    if (previous === undefined) delete process.env.TIKTOK_USERNAME;
+    else process.env.TIKTOK_USERNAME = previous;
+  }
 });
 
 test('TikTok events are normalized to the six allowed types without forwarding bot', () => {

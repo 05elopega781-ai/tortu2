@@ -52,7 +52,7 @@ const comboCounts = new Map();
 const pendingCountryComments = Object.fromEntries([...COUNTRIES.map(country => country.code), 'sin-pais'].map(code => [code, 0]));
 const connection = { connected: false, status: 'connecting', username: '' };
 let connector = null;
-let connecting = false;
+let connectionAttemptId = 0;
 let retryTimer = null;
 let retryDeadline = 0;
 let retryCount = 0;
@@ -73,6 +73,10 @@ let overlayActive = false;
 
 function normalizeUsername(value) {
   return String(value || '').trim().replace(/@/g, '').replace(/\s+/g, '');
+}
+
+function configuredUsername(savedUsername = settings.username) {
+  return normalizeUsername(savedUsername || process.env.TIKTOK_USERNAME || 'd4n1el325');
 }
 
 function eventUser(data) {
@@ -180,7 +184,7 @@ function escapeRegExp(value) {
 function setStatus(status, connected) {
   connection.status = status;
   connection.connected = connected;
-  broadcastSse(clients, 'status', { connected, status });
+  broadcastSse(clients, 'status', { connected, status, username: connection.username });
 }
 
 function broadcastSse(pool, event, data) {
@@ -377,18 +381,29 @@ async function persistSettings() {
 }
 
 async function createConnection(username) {
-  if (connecting) return;
-  if (connection.connected && connection.username === username) return;
-  connecting = true;
-  connection.username = username;
+  const requestedUsername = normalizeUsername(username);
+  if (!requestedUsername || (connection.connected && connection.username === requestedUsername)) return;
+  const attemptId = ++connectionAttemptId;
+  const previousConnection = connector;
+  connector = null;
+  connection.username = requestedUsername;
   setStatus(retryCount ? 'reconnecting' : 'connecting', false);
   let attemptConnection = null;
   try {
+    if (previousConnection?.disconnect) {
+      try {
+        await previousConnection.disconnect();
+      } catch (error) {
+        console.error('No se pudo cerrar la conexión anterior de TikTok:', error.message);
+      }
+    }
+    if (attemptId !== connectionAttemptId) return;
     const module = await import('tiktok-live-connector');
     const Connector = module.TikTokLiveConnection || module.WebcastPushConnection ||
       module.default?.TikTokLiveConnection || module.default?.WebcastPushConnection;
     if (typeof Connector !== 'function') throw new Error('No se encontró el conector de TikTok compatible.');
-    const instance = new Connector(username, { processInitialData: false });
+    if (attemptId !== connectionAttemptId) return;
+    const instance = new Connector(requestedUsername, { processInitialData: false });
     attemptConnection = instance;
     connector = instance;
     const eventTypes = ['member', 'chat', 'gift', 'like', 'social'];
@@ -418,12 +433,15 @@ async function createConnection(username) {
     } finally {
       clearTimeout(timeout);
     }
+    if (attemptId !== connectionAttemptId) return;
     setStatus('connected', true);
     retryCount = 0;
     retryDeadline = 0;
     if (retryTimer) clearTimeout(retryTimer);
     retryTimer = null;
   } catch (error) {
+    if (attemptId !== connectionAttemptId) return;
+    if (connector === attemptConnection) connector = null;
     if (attemptConnection?.disconnect) {
       try {
         await attemptConnection.disconnect();
@@ -431,10 +449,9 @@ async function createConnection(username) {
         console.error('No se pudo cerrar el intento de TikTok:', disconnectError.message);
       }
     }
+    if (attemptId !== connectionAttemptId) return;
     setStatus('reconnecting', false);
     scheduleReconnect(error);
-  } finally {
-    connecting = false;
   }
 }
 
@@ -456,10 +473,7 @@ function scheduleReconnect(error) {
   const remaining = retryDeadline - now;
   retryTimer = setTimeout(() => {
     retryTimer = null;
-    const username = process.env.TIKTOK_USERNAME
-      ? normalizeUsername(process.env.TIKTOK_USERNAME)
-      : normalizeUsername(settings.username || 'd4n1el325');
-    createConnection(username);
+    createConnection(configuredUsername());
   }, Math.min(5000, remaining));
 }
 
@@ -704,7 +718,7 @@ $('#voiceToggle').onclick=async()=>{
  catch(e){$('#voiceError').textContent=e.message}
 };
 let received=0;const source=new EventSource('/api/events');
-source.addEventListener('status',e=>{const s=JSON.parse(e.data),online=!!s.connected;$('#status').textContent=online?'ONLINE':String(s.status||'DESCONECTADO').toUpperCase();$('#status').classList.toggle('online',online);$('#statusDetail').textContent=online?'Conectado a @'+(s.username||'TikTok'):'Estado del conector: '+(s.status||'sin conexión')});
+source.addEventListener('status',e=>{const s=JSON.parse(e.data),online=!!s.connected;$('#status').textContent=online?'ONLINE':String(s.status||'DESCONECTADO').toUpperCase();$('#status').classList.toggle('online',online);$('#statusDetail').textContent=online?'Conectado a @'+(s.username||'TikTok'):'Estado del conector: '+(s.status||'sin conexión')+(s.username?' · @'+s.username:'')});
 source.addEventListener('update',()=>{$('#eventCount').textContent=String(++received)});
 const tools=new EventSource('/api/game-tools/events');
 tools.addEventListener('game-tools',e=>{const x=JSON.parse(e.data);$('#tools').textContent=JSON.stringify(x,null,2);$('#giftCount').textContent=String(x.giftCount||0)});
@@ -750,7 +764,11 @@ async function handle(req, res) {
     return;
   }
   if (path === '/api/events' && req.method === 'GET') {
-    sse(req, res, clients, [['status', { connected: connection.connected, status: connection.status }]]);
+    sse(req, res, clients, [['status', {
+      connected: connection.connected,
+      status: connection.status,
+      username: connection.username
+    }]]);
     return;
   }
   if (path === '/api/game-tools/events' && req.method === 'GET') {
@@ -785,9 +803,7 @@ async function handle(req, res) {
       safeJson(res, 409, { ok: true, username: connection.username, message: 'Ya está conectado.' });
       return;
     }
-    const username = process.env.TIKTOK_USERNAME
-      ? normalizeUsername(process.env.TIKTOK_USERNAME)
-      : normalizeUsername(settings.username || 'd4n1el325');
+    const username = configuredUsername();
     if (!username) {
       safeJson(res, 400, { message: 'El usuario de TikTok no puede estar vacío.' });
       return;
@@ -809,7 +825,7 @@ async function handle(req, res) {
     }
     settings.username = requested;
     await persistSettings();
-    const username = process.env.TIKTOK_USERNAME ? normalizeUsername(process.env.TIKTOK_USERNAME) : requested;
+    const username = requested;
     retryDeadline = Date.now() + 5 * 60 * 1000;
     retryCount = 0;
     if (retryTimer) clearTimeout(retryTimer);
@@ -943,9 +959,7 @@ async function handle(req, res) {
     retryTimer = null;
     if (connector?.disconnect) await connector.disconnect().catch(() => {});
     connector = null;
-    void createConnection(process.env.TIKTOK_USERNAME
-      ? normalizeUsername(process.env.TIKTOK_USERNAME)
-      : normalizeUsername(settings.username || 'd4n1el325'));
+    void createConnection(configuredUsername());
     safeJson(res, 200, { ok: true });
     return;
   }
@@ -1050,9 +1064,7 @@ async function main() {
   });
   server.listen(PORT, HOST, () => {
     console.log(`TortuWorld escuchando en http://${HOST}:${PORT}`);
-    const username = process.env.TIKTOK_USERNAME
-      ? normalizeUsername(process.env.TIKTOK_USERNAME)
-      : normalizeUsername(settings.username || 'd4n1el325');
+    const username = configuredUsername();
     if (username) void createConnection(username);
   });
   const shutdown = async () => {
@@ -1072,6 +1084,7 @@ async function main() {
 
 export {
   normalizeUsername,
+  configuredUsername,
   normalizeTikTokEvent,
   comboDelta,
   identifyCountry,

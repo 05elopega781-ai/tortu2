@@ -67,7 +67,7 @@
  PARTE 2 - CHECKLIST DE FUNCIONES DEL SERVIDOR (de TikTok hasta la persistencia)
 ========================================================================================================
  11c. LISTA DE FUNCIONES QUE DEBE TENER EL SERVIDOR (de TikTok hasta la persistencia). Checklist para quien programa el BACKEND.
-  F1  CUENTA TIKTOK: usuario = variable de entorno TIKTOK_USERNAME (prevalece) > usuario guardado > d4n1el325. Al guardar: quitar espacios y @. Rechazar usuario vacio.
+  F1  CUENTA TIKTOK: usuario guardado desde el panel > variable de entorno TIKTOK_USERNAME > d4n1el325. Al guardar: quitar espacios y @. Rechazar usuario vacio.
   F2  CONEXION: conectar al cargar el overlay o al pedir reconexion. Cada intento espera hasta 10 s.
   F3  REINTENTOS: cada 5 s durante un maximo de 5 min; despues queda 'failed' hasta reiniciar el ciclo.
   F4  POST /api/reconnect: inicia/reintenta la conexion. 200 = ok, 409 = ya conectado (tambien ok).
@@ -103,7 +103,7 @@
 ========================================================================================================
  11b. REGLAS DE JUEGO: QUIEN HACE QUE (backend vs frontend). Resumen para quien programa el SERVIDOR. Regla de oro: el backend ENVIA eventos reales y GUARDA datos; el frontend CALCULA puntajes, equipos, carreras y ganadores.
   CUENTA Y CONEXION
-   - Backend: el usuario de la variable de entorno TIKTOK_USERNAME prevalece sobre el guardado; si no hay ninguno usa d4n1el325. Al guardar se quitan espacios y @; NO se acepta usuario vacio. Conecta al cargar el overlay o cuando el panel pide reconexion (POST /api/reconnect).
+   - Backend: el usuario guardado desde el panel prevalece; si no hay ninguno usa TIKTOK_USERNAME y luego d4n1el325. Al guardar se quitan espacios y @; NO se acepta usuario vacio. Conecta al cargar el overlay o cuando el panel pide reconexion (POST /api/reconnect).
    - Frontend: muestra el estado recibido por SSE (event: status). Si falla la conexion puede pedir reconexion.
   REINTENTOS
    - Backend: cada intento espera hasta 10 s para conectar; reintenta cada 5 s durante un maximo de 5 min; despues queda en estado 'failed' hasta reiniciar el ciclo.
@@ -247,7 +247,7 @@
 ========================================================================================================
  El backend de este repositorio implementa los contratos anteriores con estas decisiones concretas:
   - Runtime: Node.js 20 o posterior. El HTML se sirve en / y /index.html; recursos PWA desde /manifest.webmanifest y /sw.js.
-  - TikTok: TIKTOK_USERNAME > usuario guardado por POST /api/connect > d4n1el325. Se usa tiktok-live-connector; solo los seis tipos
+  - TikTok: usuario guardado por POST /api/connect > TIKTOK_USERNAME > d4n1el325. Se usa tiktok-live-connector; solo los seis tipos
     permitidos se emiten. Los regalos en combo emiten el delta nuevo de repeatCount y el cliente no recibe el campo bot.
   - Estado: archivos JSON atomicos bajo data/state; las claves aceptadas son cluss.v1, cluss.torneoLock, cluss.lang,
     cluss.crest.<id>, cluss.vs, cluss.fans, cluss.stats, cluss.libreVotes, cluss.chatArchive y cluss.log.<id>.
