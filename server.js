@@ -108,13 +108,16 @@ function eventDisplayName(data) {
 function eventAvatar(data) {
   const user = eventUser(data);
   const candidates = [
-    user.profilePictureUrl, user.profilePicture?.url, user.profilePicture,
-    user.avatarUrl, user.avatar, user.userImage, user.imageUrl,
+    user.profilePictureUrl, user.profilePicture?.url, user.profilePicture?.urlList, user.profilePicture?.urls, user.profilePicture,
+    user.avatarUrl, user.avatarLarge, user.avatarLarger, user.avatarMedium, user.avatarThumb, user.avatar, user.userImage, user.imageUrl,
     data?.profilePictureUrl, data?.profilePicture, data?.avatarUrl, data?.avatar, data?.userImage, data?.imageUrl
   ];
   for (const candidate of candidates) {
-    const url = Array.isArray(candidate) ? candidate[0] : candidate;
-    if (typeof url === 'string' && /^https:\/\//i.test(url)) return url;
+    const urls = Array.isArray(candidate) ? candidate : [candidate];
+    for (const item of urls) {
+      const url = typeof item === 'object' && item !== null ? item.url || item.uri : item;
+      if (typeof url === 'string' && /^https:\/\//i.test(url)) return url;
+    }
   }
   return '';
 }

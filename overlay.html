@@ -568,8 +568,8 @@ body{margin:0;background:var(--page);font-family:Inter,system-ui,sans-serif;colo
 .pod .pr{position:absolute;background:#2b1708;color:#ffd566;font:800 8px/11px Inter,sans-serif;text-align:center;border:1px solid #ffd566;z-index:2}
 .hd .cn{letter-spacing:-.2px}
 .evs{display:flex;gap:2px;padding:3px 4px;background:linear-gradient(#7a4e2a,#5a3a1e);border:2px solid #3f2713;border-radius:10px;box-shadow:inset 0 1px 3px rgba(0,0,0,.5)}
-.gift-total{box-sizing:border-box;width:100%;min-height:22px;padding:2px 6px;border:1px solid #9a6b22;border-radius:7px;background:linear-gradient(#503915,#35240d);color:#fff;gap:5px}
-.gift-total b{font-size:12px;color:#ffe08a}.gift-total span{font-size:13px}
+.gift-total{box-sizing:border-box;width:100%;min-height:34px;padding:2px 6px;border:1px solid #9a6b22;border-radius:7px;background:linear-gradient(#503915,#35240d);color:#fff;gap:5px;justify-content:center}
+.gift-total span{font-size:24px;font-weight:900;line-height:1;font-variant-numeric:tabular-nums}
 .st{flex:1;min-width:0;display:flex;flex-direction:row;align-items:center;justify-content:center;gap:3px;line-height:1}
 .st b{font-weight:400}
 .st span{font:800 11px Inter,sans-serif;color:#fff;text-shadow:0 1px 1px #000;white-space:nowrap}
@@ -641,7 +641,7 @@ body{margin:0;background:var(--page);font-family:Inter,system-ui,sans-serif;colo
 .ev .ua.hero{position:relative;display:grid;place-items:center;font-size:26px;line-height:58px;box-shadow:0 0 0 2px #fff,0 3px 7px rgba(0,0,0,.6);animation:none;overflow:hidden;background:linear-gradient(180deg,#fff,#d9d9d9);color:#1c140e}
 .ev .ua.hero img{width:100%;height:100%;object-fit:cover;display:block}
 .ev .ua.hero.bt{font-size:26px}
-.fan-alerts{position:absolute;inset:0;z-index:7;pointer-events:none}
+.fan-alerts{position:absolute;inset:0;z-index:11;pointer-events:none;overflow:visible}
 .fan-alert{position:absolute;left:var(--x);top:var(--y);transform:translate(-50%,-50%);display:flex;align-items:center;gap:3px;max-width:96%;padding:2px 5px;border:1px solid var(--c,#3f2713);border-radius:10px;background:rgba(255,255,255,.95);color:#2a2018;box-shadow:0 2px 5px rgba(0,0,0,.5);white-space:nowrap;animation:fanAlertIn .2s ease-out}
 .fan-alert .ua.hero{position:relative;display:grid;place-items:center;flex:none;width:25px;height:29px;border:2px solid var(--c,#3f2713);border-radius:50%;overflow:hidden;background:#eee;font-size:13px;line-height:1}
 .fan-alert .ua.hero img{width:100%;height:100%;object-fit:cover}
@@ -780,6 +780,7 @@ document.addEventListener('visibilitychange',function(){if(document.hidden)flush
 <!-- TABLERO: izquierda 2 carriles (duelo) con encabezado de pais, contador de corazon y nido; derecha Don Tortu, botones de accion y podio de copas -->
 <section class="board">
 <div class="lanes" id="lanes"></div>
+<div class="fan-alerts" id="event-alerts" aria-hidden="true"></div>
 <div class="side">
 <div class="bub" id="bub" aria-live="polite">¡Y ARRANCAN LAS TORTUGAS!</div>
 <svg width="64" height="64" viewBox="0 0 84 84" role="img" aria-label="Avatar de Don Tortu, el relator (tortuga)">
@@ -810,7 +811,7 @@ document.addEventListener('visibilitychange',function(){if(document.hidden)flush
 <div class="foot"><span class="live connecting" id="connection" role="status" aria-live="polite">conectando</span><button class="sm" id="bTurboDn" type="button" aria-label="Bajar el límite de taps del turbo en 10" title="Turbo: 10 taps menos">➖</button><button class="sm" id="bTurboUp" type="button" aria-label="Subir el límite de taps del turbo en 10" title="Turbo: 10 taps más">➕</button><button class="sm" id="bRefresh" type="button" aria-label="Refrescar página" title="Refrescar página">🔄</button><button class="sm" id="bMonitor" type="button" aria-label="Abrir monitor por unidad de negocio" title="Monitor por unidad de negocio">📊</button><button class="sm" id="bBackend" type="button" aria-label="Abrir herramientas del backend" title="Herramientas del backend">⚙️</button></div>
 <!-- FRANJA DE ESTADISTICAS del live: solo eventos REALES (los bots y los toques manuales no cuentan). -->
 <div class="evs" id="evs" role="status" aria-label="Estadisticas del live"><div class="st" data-k="member" title="Unidos"><b>👥</b><span>0</span></div><div class="st" data-k="chat" title="Comentarios"><b>💬</b><span>0</span></div><div class="st" data-k="like" title="Me gusta"><b>❤️</b><span>0</span></div><div class="st" data-k="follow" title="Seguidores nuevos"><b>➕</b><span>0</span></div><div class="st" data-k="share" title="Compartidos"><b>↗️</b><span>0</span></div></div>
-<div class="gift-total st" data-k="gift" role="status" aria-label="Regalos recibidos en esta sesión" title="Cantidad de regalos recibidos en esta sesión"><b>🎁 Regalos</b><span>0</span></div>
+<div class="gift-total st" data-k="gift" role="status" aria-label="Regalos recibidos en esta sesión" title="Cantidad de regalos recibidos en esta sesión"><span>0</span></div>
 <div id="toast" role="status" aria-live="polite"></div>
 <!-- Monitor de unidades de negocio. Se mantiene el panel visual existente del overlay. -->
 <section id="stp" hidden role="dialog" aria-label="Monitor por unidad de negocio"><header><b>🐢 Monitor LIVE</b><span><button data-reset>↺ Reiniciar copas</button> <button data-close aria-label="Cerrar">✕</button></span></header><nav aria-label="Unidades de negocio"><button data-tab="eventos" title="Eventos">⚡ Eventos</button><button data-tab="usuarios" title="Usuarios">👤 Usuarios</button><button data-tab="regalos" title="Regalos">🎁 Regalos</button><button data-tab="equipos" title="Equipos">🐢 Equipos</button><button data-tab="torneos" title="Torneos">🏆 Torneos</button><button data-tab="estadisticas" title="Estadísticas">📊 Estad.</button><button data-tab="motor" title="Motor tiempo real">⚙ Motor</button><button data-tab="turbo-equipos" title="Turbo contador equipos">⚡ Turbo eq.</button><button data-tab="turbo-regalos" title="Turbo regalos">🎁 Turbo reg.</button><button data-tab="voz" title="Voz en off">♫ Voz</button><button data-tab="honor" title="Cuadro de honor">🥇 Honor</button><button data-tab="narrador" title="Narrador">🎙 Narrador</button><button data-tab="acciones" title="CTAs y acciones">🛠 Acciones</button></nav><div class="stb"></div></section>
@@ -1829,7 +1830,7 @@ const liveUsers=new Set();
 handleLiveEntry=function(e){live=true;cu=String(e&&e.username||'').trim()||'anónimo';if(cu!=='anónimo')liveUsers.add(cu.toLowerCase());try{_hle(e)}finally{live=false;cu=null}
  try{avatar(e)}catch(x){console.error(x)}try{perks(e)}catch(x){console.error(x)}};
 const gs=[2,2,2],seen=new Set();
-T.forEach((t,i)=>$('#sv'+i).insertAdjacentHTML('beforeend','<div class="nest" id="av'+i+'" aria-label="Hinchas de '+t.n+'"><div class="nb"></div><div class="nf"></div></div><div class="fan-alerts" id="ev'+i+'"></div>'));
+T.forEach((t,i)=>$('#sv'+i).insertAdjacentHTML('beforeend','<div class="nest" id="av'+i+'" aria-label="Hinchas de '+t.n+'"><div class="nb"></div><div class="nf"></div></div>'));
 /* ===== NIDO DE HINCHAS (regla 12) =====
  recent[t]  = usuarios REALES del equipo t, el mas reciente primero: [0] va al frente (avatar grande = ultimo evento), [1..2] van a los otros huevos grandes, [3..14] son los huevos del nido (fila de 6 + fila de 4).
 
@@ -1948,17 +1949,20 @@ const userScore=new Map(),SCORE={member:1,chat:5,like:1,follow:3,share:3,gift:0}
 function topOf(t){let b=null,m=0;(recent[t]||[]).forEach(x=>{const s=userScore.get(x.key)||0;if(s>m){m=s;b=x.key}});return b}
 /* Alertas independientes: varias pueden convivir y cada una aparece en un punto distinto de la pista. */
 function showEv(t,type,n,u){
- const layer=$('#ev'+t),d=EI[type];if(!layer||!d)return;
+ const layer=$('#event-alerts'),d=EI[type];if(!layer||!d)return;
  const info=u&&typeof u==='object'?u:null;
  while(layer.children.length>=8)layer.firstElementChild.remove();
- const alert=document.createElement('div');alert.className='fan-alert';alert.style.setProperty('--x',(12+Math.random()*76)+'%');alert.style.setProperty('--y',(10+Math.random()*78)+'%');alert.style.setProperty('--c',d[1]);
+ const alert=document.createElement('div'),lane=document.querySelector('#ln'+t),board=document.querySelector('.board');
+ let x=(t+.5)/T.length*84;
+ if(lane&&board){const laneBox=lane.getBoundingClientRect(),boardBox=board.getBoundingClientRect();if(boardBox.width)x=(laneBox.left+laneBox.width/2-boardBox.left)/boardBox.width*100}
+ alert.className='fan-alert';alert.style.setProperty('--x',Math.max(8,Math.min(92,x+(Math.random()-.5)*8))+'%');alert.style.setProperty('--y',(10+Math.random()*78)+'%');alert.style.setProperty('--c',d[1]);
  const avatar=document.createElement('span');avatar.className='ua hero';
  const name=String(info&&info.name||'');
  const url=String(info&&info.url||'');
  if(/^https?:\/\//i.test(url))setAvatarImage(avatar,url);else if(name)avatar.textContent=[...name][0].toUpperCase();
  avatar.title=name?'@'+name:'';
  const badge=document.createElement('b');badge.className='eb';badge.textContent=d[0]+(type==='like'&&Number(n)>1?' ×'+Math.floor(Number(n)):'');
- const label=document.createElement('span');label.className='en';label.textContent=name?'@'+name:'';
+ const label=document.createElement('span');label.className='en';label.textContent=name?(info&&info.username?'@'+info.username:name):'';
  alert.append(avatar,badge,label);layer.append(alert);
  let timer;timer=setTimeout(()=>{alert.remove();eventTimers.delete(timer)},2200);eventTimers.add(timer);
 }
@@ -1978,8 +1982,8 @@ function setAvatarImage(el,url){
 /* Un evento REAL: su usuario pasa al frente del nido y el anterior baja a los huevos (el bot nunca llega aqui) */
 function avatar(e){
  if(!e||e.bot||!['member','chat','gift','like','follow','share'].includes(e.type))return;
- const u=String(e.username||'').trim();if(!u)return;
- const k=u.toLowerCase(),t=supportTeamFor(k);
+ const username=String(e.username||'').trim(),displayName=String(e.displayName||'').trim(),u=username||displayName;if(!u)return;
+ const k=(username||'display:'+displayName).toLowerCase(),t=supportTeamFor(k);
  const url=String(e.profilePictureUrl||e.profilePicture||e.avatarUrl||e.avatar||e.userImage||e.imageUrl||'');
  if(t==null||!T[t])return;
  known.set(k,{key:k,name:u,url:url||(known.get(k)&&known.get(k).url)||'',t});
@@ -1992,7 +1996,7 @@ function avatar(e){
  if(old&&from!==t){toast(who(u)+' se pasó a '+T[t].n,'🔁');A.sfx('sel')}
  recent[t].unshift({key:k,name:u,url:url||(old&&old.url)||'',vip:!!(old&&old.vip)});
  trimNest(t);
- showEv(t,e.type,e.activityCount,{key:k,name:u,url:url||''});
+ showEv(t,e.type,e.activityCount,{key:k,name:displayName||u,username,url:url||''});
  renderNest(t);if(from>=0&&from!==t)renderNest(from);
  renderPod(t);if(from>=0&&from!==t)renderPod(from);
 }

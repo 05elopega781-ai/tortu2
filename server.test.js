@@ -351,6 +351,15 @@ test('TikTok events are normalized to the six allowed types without forwarding b
   const member = normalizeTikTokEvent('member', { user: { nickname: 'Fan nickname' } });
   assert.equal(member.username, '');
   assert.equal(member.displayName, 'Fan nickname');
+  assert.equal(normalizeTikTokEvent('member', {
+    user: {
+      nickname: 'Fan nickname',
+      profilePicture: { urlList: ['https://example.test/member.jpg'] }
+    }
+  })?.profilePictureUrl, 'https://example.test/member.jpg');
+  assert.equal(normalizeTikTokEvent('follow', {
+    user: { displayName: 'Fan Display', avatarLarge: 'https://example.test/fan.jpg' }
+  })?.profilePictureUrl, 'https://example.test/fan.jpg');
   assert.equal(normalizeTikTokEvent('share', { user: { displayId: 'fan2' } })?.username, 'fan2');
 });
 
