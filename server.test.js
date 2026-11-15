@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
-import { comboDelta, configuredUsername, identifyCountry, normalizeTikTokEvent, normalizeUsername, socialEventType } from './server.js';
+import { comboDelta, configuredUsername, dedupeEvent, handle, identifyCountry, normalizeTikTokEvent, normalizeUsername, socialEventType } from './server.js';
 import voicePriority from './server/voice-priority.js';
 
 test('live event counters count events, not weighted interaction points', () => {
@@ -66,6 +67,58 @@ test('a username selected in the backend takes precedence over the environment d
   }
 });
 
+test('backend login protects the panel and admin APIs until a session cookie is set', async () => {
+  const previousToken = process.env.BACKEND_ADMIN_TOKEN;
+  process.env.BACKEND_ADMIN_TOKEN = 'test-admin-token';
+  const server = createServer((req, res) => void handle(req, res));
+  server.listen(0, '127.0.0.1');
+  await new Promise(resolve => server.once('listening', resolve));
+  const address = server.address();
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+
+  try {
+    const lockedPage = await fetch(`${baseUrl}/backend`);
+    assert.match(await lockedPage.text(), /Acceso al backend/);
+    const lockedApi = await fetch(`${baseUrl}/api/admin/presence`);
+    assert.equal(lockedApi.status, 401);
+    const lockedConnect = await fetch(`${baseUrl}/api/connect`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ username: 'other_account' })
+    });
+    assert.equal(lockedConnect.status, 401);
+
+    const rejectedLogin = await fetch(`${baseUrl}/api/admin/session`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ token: 'wrong-token' })
+    });
+    assert.equal(rejectedLogin.status, 401);
+    const login = await fetch(`${baseUrl}/api/admin/session`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ token: 'test-admin-token' })
+    });
+    assert.equal(login.status, 200);
+    const cookie = login.headers.get('set-cookie').split(';', 1)[0];
+    assert.match(cookie, /^tortu_admin_session=/);
+
+    const unlockedPage = await fetch(`${baseUrl}/backend`, { headers: { cookie } });
+    assert.match(await unlockedPage.text(), /Controla la partida/);
+    const unlockedApi = await fetch(`${baseUrl}/api/admin/presence`, { headers: { cookie } });
+    assert.equal(unlockedApi.status, 200);
+
+    const logout = await fetch(`${baseUrl}/api/admin/session`, { method: 'DELETE', headers: { cookie } });
+    assert.equal(logout.status, 200);
+    const lockedAgain = await fetch(`${baseUrl}/backend`, { headers: { cookie } });
+    assert.match(await lockedAgain.text(), /Acceso al backend/);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+    if (previousToken === undefined) delete process.env.BACKEND_ADMIN_TOKEN;
+    else process.env.BACKEND_ADMIN_TOKEN = previousToken;
+  }
+});
+
 test('TikTok events are normalized to the six allowed types without forwarding bot', () => {
   const entry = normalizeTikTokEvent('chat', {
     user: { uniqueId: 'fan1', profilePictureUrl: 'https://example.test/avatar.jpg' },
@@ -93,6 +146,28 @@ test('TikTok events are normalized to the six allowed types without forwarding b
     diamondCount: 1,
     repeatCount: 2
   })?.giftDiamonds, 1);
+});
+
+test('repeated likes from one user pass event dedupe and contribute to live stats and taps', () => {
+  const browser = { window: {} };
+  runInNewContext(readFileSync(new URL('./public/activity-policy.js', import.meta.url), 'utf8'), browser);
+  const policy = browser.window.TORTUWORLD_ACTIVITY_POLICY;
+  const events = [
+    { id: 'user-id-42', user: { uniqueId: 'fan1' }, likeCount: 3 },
+    { id: 'user-id-42', user: { uniqueId: 'fan1' }, likeCount: 2 }
+  ];
+  const entries = events
+    .filter(event => !dedupeEvent(event, 'like'))
+    .map(event => normalizeTikTokEvent('like', event));
+
+  assert.equal(entries.length, 2);
+  assert.deepEqual(entries.map(entry => entry.username), ['fan1', 'fan1']);
+  assert.deepEqual(entries.map(entry => entry.activityCount), [3, 2]);
+  assert.equal(entries.reduce((total, entry) => total + policy.eventCountDelta(entry.type, entry.activityCount), 0), 5);
+  assert.equal(entries.reduce((total, entry) => total + policy.statEventDelta(entry.type, entry.activityCount), 0), 5);
+  assert.equal(entries.reduce((total, entry) => total + policy.tapEventDelta(entry.type, entry.activityCount), 0), 5);
+  assert.equal(dedupeEvent({ msgId: 'like-event-1' }, 'like'), false);
+  assert.equal(dedupeEvent({ msgId: 'like-event-1' }, 'like'), true);
 });
 
 test('gift combos emit only the new repeat-count delta', () => {

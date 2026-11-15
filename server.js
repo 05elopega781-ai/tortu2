@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { createServer } from 'node:http';
-import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto';
+import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { appendFile, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { dirname, extname, resolve } from 'node:path';
@@ -46,6 +46,7 @@ const ALLOWED_STATE_KEY = /^cluss\.(?:v1|torneoLock|lang|crest\.[\w-]+|vs|fans|s
 const clients = new Set();
 const toolClients = new Set();
 const heartbeats = new Map();
+const adminSessions = new Map();
 const recentUsers = [];
 const seenEventIds = new Map();
 const comboCounts = new Map();
@@ -58,6 +59,8 @@ let retryDeadline = 0;
 let retryCount = 0;
 let shuttingDown = false;
 let adminToken = process.env.BACKEND_ADMIN_TOKEN || '';
+const ADMIN_SESSION_COOKIE = 'tortu_admin_session';
+const ADMIN_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 let chatMetaQueue = Promise.resolve();
 let settings = {
   username: '',
@@ -84,7 +87,7 @@ function eventUser(data) {
 }
 
 function eventId(data) {
-  return String(data?.msgId || data?.messageId || data?.eventId || data?.id || '');
+  return String(data?.msgId || data?.messageId || data?.eventId || '');
 }
 
 function eventUsername(data) {
@@ -599,11 +602,49 @@ function sameOrigin(req) {
 }
 
 function requireAdmin(req, res) {
-  if (!adminToken || req.headers.authorization !== `Bearer ${adminToken}`) {
+  const configuredToken = process.env.BACKEND_ADMIN_TOKEN || adminToken;
+  const providedToken = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  const expected = Buffer.from(configuredToken);
+  const provided = Buffer.from(providedToken);
+  const validToken = Boolean(configuredToken) && expected.length === provided.length && timingSafeEqual(expected, provided);
+  if (!hasAdminSession(req) && !validToken) {
     safeJson(res, 401, { message: 'Se requiere el token de administración configurado en BACKEND_ADMIN_TOKEN.' });
     return false;
   }
   return true;
+}
+
+function adminSessionId(req) {
+  const prefix = `${ADMIN_SESSION_COOKIE}=`;
+  const cookie = String(req.headers.cookie || '').split(';').map(value => value.trim()).find(value => value.startsWith(prefix));
+  return cookie ? cookie.slice(prefix.length) : '';
+}
+
+function hasAdminSession(req) {
+  const id = adminSessionId(req);
+  const expiresAt = adminSessions.get(id);
+  if (!expiresAt) return false;
+  if (expiresAt <= Date.now()) {
+    adminSessions.delete(id);
+    return false;
+  }
+  return true;
+}
+
+function startAdminSession(req, res) {
+  const now = Date.now();
+  for (const [id, expiresAt] of adminSessions) {
+    if (expiresAt <= now) adminSessions.delete(id);
+  }
+  const id = randomBytes(32).toString('base64url');
+  adminSessions.set(id, now + ADMIN_SESSION_TTL_MS);
+  const secure = req.socket.encrypted || req.headers['x-forwarded-proto'] === 'https';
+  res.setHeader('set-cookie', `${ADMIN_SESSION_COOKIE}=${id}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${ADMIN_SESSION_TTL_MS / 1000}${secure ? '; Secure' : ''}`);
+}
+
+function endAdminSession(req, res) {
+  adminSessions.delete(adminSessionId(req));
+  res.setHeader('set-cookie', `${ADMIN_SESSION_COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0`);
 }
 
 function sse(req, res, pool, initialEvents = []) {
@@ -684,16 +725,17 @@ input{border:1px solid #31435a;background:#0a1220;color:var(--text);padding:.65r
 <section class="panel"><header><h2><span class="icon">⚙</span> Control de partida</h2><span class="pill">GAMEPLAY</span></header><div class="form-row"><label class="field">Turbo por regalo %<input id="gift" type="number" min="0" max="100" value="6"></label><label class="field">Turbo por taps %<input id="tap" type="number" min="0" max="100" value="20"></label><button class="primary" id="save">Guardar ajustes</button></div><div class="toolbar"><button id="reset">Reiniciar cronómetro y regalos</button><p><button data-command="turbo-down">Turbo −</button><button data-command="turbo-up">Turbo +</button><button data-command="refresh">Recargar overlay</button></p></div><pre class="pre" id="tools">Esperando telemetría…</pre></section>
 <section class="panel"><header><h2><span class="icon">🏁</span> Torneo Libre</h2><span class="pill">VOTACIÓN</span></header><label class="checkrow"><input id="tournamentEnabled" type="checkbox"> Registrar votos de comentarios reales</label><div class="toolbar"><button class="primary" id="saveTournament">Guardar configuración</button></div></section>
 </div><div>
-<section class="panel"><header><h2><span class="icon">🔐</span> Acceso de operador</h2><span class="pill">ADMIN</span></header><label class="field token">Token de administración<input id="token" type="password" autocomplete="current-password" placeholder="BACKEND_ADMIN_TOKEN"></label><p class="subtle">Se envía solo al servidor para las acciones protegidas.</p></section>
+<section class="panel"><header><h2><span class="icon">🔐</span> Sesión de operador</h2><span class="pill">ADMIN</span></header><p class="subtle">Sesión protegida por token. Se cerrará automáticamente en 12 horas.</p><button type="button" id="logout">Cerrar sesión</button></section>
 <section class="panel"><header><h2><span class="icon">🌎</span> Actividad por país</h2><span class="pill">LIVE DATA</span></header><pre class="pre" id="countries">Esperando datos…</pre><div class="country-box"><span class="subtle">Estado del overlay</span><pre class="pre" id="presence">Verificando clientes…</pre></div></section>
 </div></div><p class="message" id="message" role="status"></p>
 </main><footer class="server-footer"><span>TORTUWORLD GAME SERVER</span><span>Control local · datos en tiempo real</span></footer></div>
 <script>
-const $=s=>document.querySelector(s),token=()=>$('#token').value,headers=()=>({'content-type':'application/json','authorization':'Bearer '+token()}),msg=t=>$('#message').textContent=t;
-async function admin(path,body){const r=await fetch(path,{method:'POST',headers:headers(),body:JSON.stringify(body||{})});const j=await r.json();if(!r.ok)throw Error(j.message||r.status);return j}
+const $=s=>document.querySelector(s),headers=()=>({'content-type':'application/json'}),msg=t=>$('#message').textContent=t;
+async function admin(path,body){const r=await fetch(path,{method:'POST',headers:headers(),credentials:'same-origin',body:JSON.stringify(body||{})});const j=await r.json();if(!r.ok)throw Error(j.message||r.status);return j}
+$('#logout').onclick=async()=>{await fetch('/api/admin/session',{method:'DELETE',credentials:'same-origin'});location.replace('/backend')};
 $('#clock').textContent=new Date().toLocaleTimeString('es');
 setInterval(()=>$('#clock').textContent=new Date().toLocaleTimeString('es'),1000);
-$('#connect').onsubmit=async e=>{e.preventDefault();try{const r=await fetch('/api/connect',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({username:e.target.username.value})});const j=await r.json();if(!r.ok)throw Error(j.message);msg('Conectando con @'+j.username)}catch(x){msg(x.message)}};
+$('#connect').onsubmit=async e=>{e.preventDefault();try{const r=await fetch('/api/connect',{method:'POST',headers:{'content-type':'application/json'},credentials:'same-origin',body:JSON.stringify({username:e.target.username.value})});const j=await r.json();if(!r.ok)throw Error(j.message);msg('Conectando con @'+j.username)}catch(x){msg(x.message)}};
 $('#reconnect').onclick=async()=>{try{await admin('/api/admin/reconnect');msg('Reconexión solicitada')}catch(e){msg(e.message)}};
 $('#save').onclick=async()=>{try{await admin('/api/admin/game-settings',{giftTurboProgress:+$('#gift').value,tapTurboProgress:+$('#tap').value});msg('Ajustes guardados')}catch(e){msg(e.message)}};
 $('#saveTournament').onclick=async()=>{try{await admin('/api/admin/tournament-enabled',{enabled:$('#tournamentEnabled').checked});msg('Configuración de Torneo Libre guardada')}catch(e){msg(e.message)}};
@@ -725,7 +767,7 @@ tools.addEventListener('game-tools',e=>{const x=JSON.parse(e.data);$('#tools').t
 tools.addEventListener('game-settings',e=>{const x=JSON.parse(e.data);$('#gift').value=x.giftTurboProgress;$('#tap').value=x.tapTurboProgress});
 async function refresh(){
  try{
-  const [p,c]=await Promise.all([fetch('/api/admin/presence',{headers:headers()}),fetch('/api/admin/country-stats',{headers:headers()})]);
+  const [p,c]=await Promise.all([fetch('/api/admin/presence',{credentials:'same-origin'}),fetch('/api/admin/country-stats',{credentials:'same-origin'})]);
   const presence=await p.json(),countries=await c.json();if(!p.ok)throw Error(presence.message||p.status);if(!c.ok)throw Error(countries.message||c.status);
   $('#presence').textContent=JSON.stringify(presence,null,2);$('#countries').textContent=JSON.stringify(countries,null,2);
   $('#overlayState').textContent=presence.active?'ACTIVO':'OFFLINE';$('#overlayClients').textContent=presence.clients+' cliente(s) conectado(s)';
@@ -733,6 +775,11 @@ async function refresh(){
 }
 setInterval(refresh,15000);refresh();
 </script></body></html>`;
+
+const backendLoginPage = `<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#090e18"><title>Acceso · TortuWorld</title>
+<style>*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#090e18;color:#eaf3ff;font:15px/1.5 Segoe UI,system-ui,sans-serif}.card{width:min(420px,calc(100% - 32px));padding:28px;border:1px solid #29465b;border-radius:16px;background:#111a29;box-shadow:0 16px 40px #0005}h1{font-size:21px;margin:0 0 8px}p{color:#91a4bc;margin:0 0 20px}label{display:grid;gap:7px;color:#91a4bc;font-size:12px}input,button{font:inherit;border-radius:8px;padding:11px 13px}input{width:100%;border:1px solid #31435a;background:#0a1220;color:#eaf3ff}button{margin-top:14px;border:1px solid #57d3ce;background:#1d7884;color:#fff;font-weight:700;cursor:pointer}.error{min-height:22px;margin-top:12px;color:#ff7189;font-size:13px}</style>
+<main class="card"><h1>Acceso al backend</h1><p>Ingresa el token de administración para iniciar una sesión protegida de 12 horas.</p><form id="login"><label>Token de administración<input name="token" type="password" autocomplete="current-password" required autofocus></label><button>Iniciar sesión</button></form><div class="error" id="error" role="status"></div></main>
+<script>document.getElementById('login').addEventListener('submit',async event=>{event.preventDefault();const form=event.currentTarget,error=document.getElementById('error');error.textContent='';try{const response=await fetch('/api/admin/session',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token:form.token.value})});const result=await response.json();if(!response.ok)throw new Error(result.message||'No se pudo iniciar sesión.');location.replace('/backend')}catch(e){error.textContent=e.message;form.token.select()}});</script></html>`;
 
 async function handle(req, res) {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
@@ -746,12 +793,31 @@ async function handle(req, res) {
     return;
   }
 
+  if (path === '/api/admin/session' && req.method === 'POST') {
+    const body = await readBody(req);
+    const provided = Buffer.from(typeof body.token === 'string' ? body.token : '');
+    const configuredToken = process.env.BACKEND_ADMIN_TOKEN || adminToken;
+    const expected = Buffer.from(configuredToken);
+    if (!configuredToken || expected.length !== provided.length || !timingSafeEqual(expected, provided)) {
+      safeJson(res, 401, { message: 'Token de administración incorrecto.' });
+      return;
+    }
+    startAdminSession(req, res);
+    safeJson(res, 200, { ok: true });
+    return;
+  }
+  if (path === '/api/admin/session' && req.method === 'DELETE') {
+    endAdminSession(req, res);
+    safeJson(res, 200, { ok: true });
+    return;
+  }
   if ((path === '/' || path === '/index.html') && (req.method === 'GET' || req.method === 'HEAD')) {
     await serveFile(req, res, HTML_FILE, { deploymentSignature: true });
     return;
   }
   if (path === '/backend' && (req.method === 'GET' || req.method === 'HEAD')) {
-    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }).end(backendPage);
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
+      .end(req.method === 'HEAD' ? undefined : hasAdminSession(req) ? backendPage : backendLoginPage);
     return;
   }
   if (path === '/manifest.webmanifest' || path === '/sw.js' || path === '/activity-policy.js') {
@@ -817,6 +883,7 @@ async function handle(req, res) {
     return;
   }
   if (path === '/api/connect' && req.method === 'POST') {
+    if (!requireAdmin(req, res)) return;
     const body = await readBody(req);
     const requested = normalizeUsername(body.username);
     if (!requested) {
@@ -1087,10 +1154,12 @@ export {
   configuredUsername,
   normalizeTikTokEvent,
   comboDelta,
+  dedupeEvent,
   identifyCountry,
   socialEventType,
   appendRecords,
   stateSnapshot,
+  handle,
   main
 };
 

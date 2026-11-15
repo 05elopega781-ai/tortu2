@@ -268,8 +268,9 @@
   - Herramientas: /api/game-tools/events emite primero ajustes y estado. POST /api/game-tools/overlay-heartbeat recibe
     {clientId,visible}; la presencia expira a los 90 s y se revisa cada 15 s. Un regalo aumenta el contador; reset vuelve a cero
     el contador y cronometro. La lista permitida de comandos es exactamente refresh, turbo-down y turbo-up.
-  - Operacion del panel: /backend muestra conexion, presencia, estadisticas y controles. Los POST /api/admin/* requieren
-    Authorization: Bearer <BACKEND_ADMIN_TOKEN>; si no se configura, se genera uno aleatorio al iniciar y se muestra en consola.
+  - Operacion del panel: /backend y POST /api/connect requieren iniciar sesion con BACKEND_ADMIN_TOKEN; crea una cookie HttpOnly/SameSite valida por 12 horas
+    para que el token se ingrese una sola vez. POST /api/admin/session inicia la sesion, DELETE la cierra y /api/admin/* acepta la cookie
+    o Authorization: Bearer <BACKEND_ADMIN_TOKEN>. Si no se configura, el token se genera al iniciar y se muestra en consola.
     Las mutaciones del contrato del overlay son same-origin; no se habilita CORS.
   - WhatsApp: solo envia avisos si WHATSAPP_ALERTS_ENABLED=true y WHATSAPP_WEBHOOK_URL esta configurado; regalos y transicion a
     overlay inactivo generan POST JSON. WHATSAPP_WEBHOOK_TOKEN, si existe, se envia como Bearer.
