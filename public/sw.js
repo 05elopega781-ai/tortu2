@@ -1,7 +1,7 @@
 'use strict';
 
 const CACHE_PREFIX = 'tortu2-shell-';
-const CACHE_NAME = CACHE_PREFIX + 'v1';
+const CACHE_NAME = CACHE_PREFIX + 'v2';
 const SHELL_URLS = [
   '/',
   '/manifest.webmanifest',

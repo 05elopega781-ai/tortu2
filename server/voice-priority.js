@@ -1,5 +1,6 @@
 export default {
   trackMeters: 100,
+  repeatCooldownMinutes: 1,
   levels: [
     {
       id: 'move',

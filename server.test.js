@@ -22,6 +22,68 @@ test('live event counters count events, not weighted interaction points', () => 
   assert.equal(policy.statEventDelta('gift', 3), 30);
 });
 
+test('idle visual advance counts only time since the last interaction and resets per race', () => {
+  const browser = { window: {} };
+  runInNewContext(readFileSync(new URL('./public/activity-policy.js', import.meta.url), 'utf8'), browser);
+  const advance = browser.window.TORTUWORLD_ACTIVITY_POLICY.createIdleVisualAdvance();
+  advance.reset(1000);
+  assert.equal(advance.update(2000, 1000, true), 1);
+  assert.equal(advance.update(2500, 2300, true), 1.2);
+  assert.equal(advance.update(3500, 2500, false), 1.2);
+  advance.reset(4000);
+  assert.equal(advance.update(5000, 4000, true), 1);
+});
+
+test('voice phrase cache blocks normalized repeats until the configured minute expires', () => {
+  const html = readFileSync(new URL('./overlay.html', import.meta.url), 'utf8');
+  const script = html.match(/<script id="voz-prioridad-js">([\s\S]*?)<\/script>/)?.[1];
+  assert.ok(script);
+  let now = 1000;
+  const spoken = [];
+  const listeners = new Map();
+  const window = {
+    speechSynthesis: {
+      speak: utterance => spoken.push(utterance.text),
+      cancel() {},
+      getVoices: () => [],
+      addEventListener() {}
+    },
+    liveEventMonitor: { receive(event) { return event; } },
+    I18N: { en: false },
+    addEventListener: (type, listener) => listeners.set(type, listener)
+  };
+  class FakeDate extends Date {
+    static now() { return now; }
+  }
+  runInNewContext(script, {
+    window,
+    T: [{ n: 'Olimpia' }, { n: 'Cerro' }],
+    S: [{ p: 0 }, { p: 0 }],
+    P: { vo: 1 },
+    over: false,
+    Date: FakeDate,
+    performance: { now: () => now },
+    SpeechSynthesisUtterance: class { constructor(text) { this.text = text; } },
+    fetch: () => Promise.resolve({ ok: false }),
+    setInterval: () => 0,
+    setTimeout: () => 0,
+    clearTimeout() {},
+    addEventListener() {}
+  });
+  window.liveEventMonitor.receive({ type: 'gift', displayName: 'Ana', username: 'ana', giftDiamonds: 1 });
+  window.liveEventMonitor.receive({ type: 'gift', displayName: 'aná', username: 'ana', giftDiamonds: 1 });
+  assert.deepEqual(spoken, ['Gracias Ana por el regalo']);
+  assert.equal(window.getVoiceMonitorState().recentPhrases.length, 1);
+  now += 59999;
+  window.liveEventMonitor.receive({ type: 'gift', displayName: 'Ana', username: 'ana', giftDiamonds: 1 });
+  assert.equal(window.getVoiceMonitorState().queue.length, 0);
+  now += 1;
+  window.liveEventMonitor.receive({ type: 'gift', displayName: 'Ana', username: 'ana', giftDiamonds: 1 });
+  assert.equal(window.getVoiceMonitorState().queue.length, 1);
+  listeners.get('voice-config-update')({ detail: { repeatCooldownMinutes: 2 } });
+  assert.equal(window.getVoiceMonitorState().phraseCooldownMs, 120000);
+});
+
 test('deployment check accepts the current signature and reloads a stale overlay once', async () => {
   const html = readFileSync(new URL('./overlay.html', import.meta.url), 'utf8');
   const script = html.match(/<script>\s*([\s\S]*?)<\/script>/)?.[1];
@@ -82,6 +144,8 @@ test('backend login protects the panel and admin APIs until a session cookie is 
     assert.match(await lockedPage.text(), /Acceso al backend/);
     const lockedApi = await fetch(`${baseUrl}/api/admin/presence`);
     assert.equal(lockedApi.status, 401);
+    const lockedVoiceConfig = await fetch(`${baseUrl}/api/admin/voice-config`);
+    assert.equal(lockedVoiceConfig.status, 401);
     const lockedLogs = await fetch(`${baseUrl}/api/admin/logs`);
     assert.equal(lockedLogs.status, 401);
     const lockedConnect = await fetch(`${baseUrl}/api/connect`, {
@@ -289,6 +353,73 @@ test('gift catalog starts with Rose enabled and validates the rotation interval'
       });
     } else {
       await fetch(`${baseUrl}/api/state/cluss.gifts`, { method: 'DELETE' });
+    }
+    await new Promise(resolve => server.close(resolve));
+    if (previousToken === undefined) delete process.env.BACKEND_ADMIN_TOKEN;
+    else process.env.BACKEND_ADMIN_TOKEN = previousToken;
+  }
+});
+
+test('voice repeat cooldown is configurable in minutes and reaches the overlay API', async () => {
+  const previousToken = process.env.BACKEND_ADMIN_TOKEN;
+  process.env.BACKEND_ADMIN_TOKEN = 'voice-config-test-token';
+  const server = createServer((req, res) => void handle(req, res));
+  server.listen(0, '127.0.0.1');
+  await new Promise(resolve => server.once('listening', resolve));
+  const baseUrl = `http://127.0.0.1:${server.address().port}`;
+  let previousState;
+  let hadPreviousState = false;
+
+  try {
+    const savedState = await fetch(`${baseUrl}/api/state/cluss.voice`);
+    if (savedState.ok) {
+      hadPreviousState = true;
+      previousState = await savedState.json();
+    }
+    await fetch(`${baseUrl}/api/state/cluss.voice`, { method: 'DELETE' });
+    const login = await fetch(`${baseUrl}/api/admin/session`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ token: 'voice-config-test-token' })
+    });
+    const cookie = login.headers.get('set-cookie').split(';', 1)[0];
+    const headers = { cookie, 'content-type': 'application/json' };
+
+    const defaults = await fetch(`${baseUrl}/api/admin/voice-config`, { headers });
+    assert.equal(defaults.status, 200);
+    assert.equal((await defaults.json()).repeatCooldownMinutes, 1);
+
+    const invalid = await fetch(`${baseUrl}/api/admin/voice-config`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ repeatCooldownMinutes: 0 })
+    });
+    assert.equal(invalid.status, 400);
+    const tooLong = await fetch(`${baseUrl}/api/admin/voice-config`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ repeatCooldownMinutes: 1441 })
+    });
+    assert.equal(tooLong.status, 400);
+
+    const saved = await fetch(`${baseUrl}/api/admin/voice-config`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ repeatCooldownMinutes: 5 })
+    });
+    assert.equal(saved.status, 200);
+    assert.equal((await saved.json()).repeatCooldownMinutes, 5);
+    const overlayConfig = await fetch(`${baseUrl}/api/voice-priority`);
+    assert.equal((await overlayConfig.json()).repeatCooldownMinutes, 5);
+  } finally {
+    if (hadPreviousState) {
+      await fetch(`${baseUrl}/api/state/cluss.voice`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(previousState)
+      });
+    } else {
+      await fetch(`${baseUrl}/api/state/cluss.voice`, { method: 'DELETE' });
     }
     await new Promise(resolve => server.close(resolve));
     if (previousToken === undefined) delete process.env.BACKEND_ADMIN_TOKEN;
@@ -1073,6 +1204,7 @@ test('service worker caches only the shell and bypasses live API responses', () 
 });
 
 test('voice-priority response matches the overlay speech template contract', () => {
+  assert.equal(voicePriority.repeatCooldownMinutes, 1);
   const levels = Object.fromEntries(voicePriority.levels.map(level => [level.id, level]));
   assert.deepEqual(Object.keys(levels.move.say).sort(), ['from', 'to']);
   assert.match(levels.chat.say, /\{text\}/);

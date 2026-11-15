@@ -96,7 +96,7 @@ const DEFAULT_VS = [
   { k: 'ct-de|ct-nl', label: 'ALEMANIA vs PAÍSES BAJOS', on: false },
   { k: 'ct-de|ct-it', label: 'ALEMANIA vs ITALIA', on: false }
 ];
-const ALLOWED_STATE_KEY = /^cluss\.(?:v1|torneoLock|lang|crest\.[\w-]+|vs|gifts|stats|libreVotes|chatArchive|log\.[\w.-]+)$/;
+const ALLOWED_STATE_KEY = /^cluss\.(?:v1|torneoLock|lang|crest\.[\w-]+|vs|gifts|voice|stats|libreVotes|chatArchive|log\.[\w.-]+)$/;
 
 const clients = new Set();
 const toolClients = new Set();
@@ -563,6 +563,20 @@ async function loadGiftConfig() {
   return giftCatalogConfig;
 }
 
+function voiceConfigView(value) {
+  const minutes = Number(value?.repeatCooldownMinutes);
+  return {
+    repeatCooldownMinutes: Number.isInteger(minutes) && minutes >= 1 && minutes <= 1440
+      ? minutes
+      : voicePriority.repeatCooldownMinutes
+  };
+}
+
+async function loadVoiceConfig() {
+  const stored = await getState('cluss.voice');
+  return voiceConfigView(stored.value);
+}
+
 async function setState(key, value) {
   const path = statePath(key);
   if (!path) throw new Error('Clave de estado no permitida.');
@@ -994,7 +1008,7 @@ input{border:1px solid #31435a;background:#0a1220;color:var(--text);padding:.65r
 <section class="panel business-panel" data-units="torneos"><header><h2><span class="icon">🏆</span> Torneos</h2><span class="pill">VOTACIÓN</span></header><label class="checkrow"><input id="tournamentEnabled" type="checkbox"> Registrar votos de comentarios reales</label><div class="toolbar"><button class="primary" id="saveTournament">Guardar configuración</button></div></section>
 <section class="panel business-panel" data-units="equipos torneos"><header><h2><span class="icon">🏆</span> Equipos · rotación de VS</h2><span class="pill">POPULAR Y NO POPULAR</span></header><p class="subtle">Olimpia–Cerro y Barcelona–Real Madrid empiezan habilitados y populares. Se repiten todos los VS habilitados como populares y, al final, uno no popular. Al terminar la lista se cargan otra vez los populares con el siguiente no popular. Cada cambio espera a que la inactividad llegue a cero.</p><div id="vsConfigList" class="vs-config-list"><div class="unit-empty">Cargando VS…</div></div><div class="toolbar"><button class="primary" id="saveVsConfig">Guardar VS y popularidad</button></div><p class="message" id="vsConfigMessage" role="status"></p></section>
 <section class="panel business-panel" data-units="estadisticas"><header><h2><span class="icon">📊</span> Estadísticas por país y presencia</h2><span class="pill">LIVE DATA</span></header><pre class="pre" id="countries">Esperando datos…</pre><div class="country-box"><span class="subtle">Estado del overlay</span><pre class="pre" id="presence">Verificando clientes…</pre></div></section>
-<section class="panel business-panel" data-units="voz"><header><h2><span class="icon">♫</span> Voz en off</h2><span class="pill">PRIORIDADES EN VIVO</span></header><p class="subtle">Los números más bajos hablan primero. Un regalo interrumpe los mensajes de menor prioridad.</p><ol class="voice-order" id="voiceOrder"></ol><p class="voice-hint">🎁 Cada regalo se agradece. Desde 1 diamante suena una alerta alegre. Luego: cambios de equipo → comentarios → saludos/acciones → avance y distancia a la meta.</p><p class="message" id="voiceError" role="status"></p></section>
+<section class="panel business-panel" data-units="voz"><header><h2><span class="icon">♫</span> Voz en off</h2><span class="pill">PRIORIDADES EN VIVO</span></header><p class="subtle">Los números más bajos hablan primero. Un regalo interrumpe los mensajes de menor prioridad.</p><div class="form-row"><label class="field">No repetir una frase durante (minutos)<input id="voiceCooldownMinutes" type="number" min="1" max="1440" step="1" value="1"></label><button class="primary" id="saveVoiceConfig">Guardar tiempo</button></div><p class="voice-hint" id="voicePhraseRule">Las frases pronunciadas se comparan con el diccionario temporal antes de hablar.</p><ol class="voice-order" id="voiceOrder"></ol><p class="voice-hint">🎁 Cada regalo se agradece. Desde 1 diamante suena una alerta alegre. Luego: cambios de equipo → comentarios → saludos/acciones → avance y distancia a la meta.</p><p class="message" id="voiceError" role="status"></p></section>
 <section class="panel business-panel" data-units="honor"><header><h2><span class="icon">🥇</span> Cuadro de honor</h2><span class="pill">TORNEOS</span></header><pre class="pre" id="honorBoard">Cargando resultados guardados…</pre></section>
 <section class="panel business-panel" data-units="narrador voz"><header><h2><span class="icon">🎙</span> Narrador</h2><span class="pill">PROTOCOLO</span></header><p class="subtle">Prioridad actual de narración y reglas de interrupción de voz.</p><ol class="voice-order" id="narratorOrder"></ol><p class="message" id="narratorError" role="status"></p></section>
 <section class="panel business-panel" data-units="acciones"><header><h2><span class="icon">🛠</span> CTAs / Acciones</h2><span class="pill">OPERADOR</span></header><p class="subtle">Herramientas de operación del live y la sesión.</p><div class="toolbar"><button id="reset">Reiniciar cronómetro y regalos</button><button data-command="refresh">Recargar overlay</button><button id="logout">Cerrar sesión protegida</button></div></section>
@@ -1084,6 +1098,15 @@ $('#saveVsConfig').onclick=async()=>{
  try{await admin('/api/admin/vs-config',{enabledKeys,popularKeys});$('#vsConfigMessage').textContent='Configuración guardada. La rotación cambia al llegar a cero la inactividad.'}
  catch(error){$('#vsConfigMessage').textContent=error.message}
 };
+$('#saveVoiceConfig').onclick=async()=>{
+ const repeatCooldownMinutes=Number($('#voiceCooldownMinutes').value);
+ try{
+  const config=await admin('/api/admin/voice-config',{repeatCooldownMinutes});
+  $('#voiceCooldownMinutes').value=config.repeatCooldownMinutes;
+  $('#voicePhraseRule').textContent='Las frases no se repiten durante '+config.repeatCooldownMinutes+' minuto'+(config.repeatCooldownMinutes===1?'':'s')+'.';
+  $('#voiceError').textContent='Tiempo de antirrepetición guardado y aplicado al overlay.';
+ }catch(error){$('#voiceError').textContent=error.message}
+};
 $('#reset').onclick=async()=>{if(!confirm('¿Reiniciar el cronómetro y el contador de regalos?'))return;try{await admin('/api/admin/game-tools/reset');msg('Cronómetro reiniciado')}catch(e){msg(e.message)}};
 document.querySelectorAll('[data-command]').forEach(b=>b.onclick=async()=>{try{await admin('/api/admin/game-command',{command:b.dataset.command});msg('Comando enviado')}catch(e){msg(e.message)}});
 const voiceInfo={gift:['Regalo','Agradece el regalo y activa la alerta alegre desde 1 diamante.','🎁'],move:['Cambio de equipo','Anuncia cuando alguien se une o cambia de equipo.','🔁'],chat:['Comentario','Lee el comentario real del usuario.','💬'],welcome:['Ingreso al live','Da la bienvenida a quien entra.','👋'],action:['Acciones','Agradece likes, seguidores y compartidos.','⚡'],match:['Relato de carrera','Informa posiciones, metros restantes y llegada a la meta.','🏁']};
@@ -1100,7 +1123,7 @@ function renderVoice(data){
  });
 }
 async function loadVoice(){
- try{const r=await fetch('/api/voice-priority',{cache:'no-store'});if(!r.ok)throw Error('No se pudo cargar el protocolo de voz ('+r.status+').');const data=await r.json();if(!Array.isArray(data.levels))throw Error('La configuración de voz no tiene niveles válidos.');renderVoice(data);$('#voiceError').textContent='Configuración recibida del servidor · meta a '+data.trackMeters+' m.';$('#narratorError').textContent='Prioridades cargadas desde el servidor.'}
+ try{const r=await fetch('/api/voice-priority',{cache:'no-store'});if(!r.ok)throw Error('No se pudo cargar el protocolo de voz ('+r.status+').');const data=await r.json();if(!Array.isArray(data.levels))throw Error('La configuración de voz no tiene niveles válidos.');renderVoice(data);$('#voiceCooldownMinutes').value=data.repeatCooldownMinutes;$('#voicePhraseRule').textContent='Las frases no se repiten durante '+data.repeatCooldownMinutes+' minuto'+(data.repeatCooldownMinutes===1?'':'s')+'.';$('#voiceError').textContent='Configuración recibida del servidor · meta a '+data.trackMeters+' m.';$('#narratorError').textContent='Prioridades cargadas desde el servidor.'}
  catch(e){$('#voiceError').textContent=e.message;$('#narratorError').textContent=e.message}
 }
 $('#voiceToggle').onclick=()=>{showUnit('voz');loadVoice()};
@@ -1328,7 +1351,7 @@ async function handle(req, res) {
     return;
   }
   if (path === '/api/voice-priority' && req.method === 'GET') {
-    safeJson(res, 200, voicePriority);
+    safeJson(res, 200, { ...voicePriority, ...await loadVoiceConfig() });
     return;
   }
   if (path === '/api/recent-users' && req.method === 'GET') {
@@ -1515,6 +1538,25 @@ async function handle(req, res) {
     await persistSettings();
     broadcastTool('game-settings', { giftTurboProgress: gift, tapTurboProgress: tap });
     safeJson(res, 200, { ok: true });
+    return;
+  }
+  if (path === '/api/admin/voice-config' && req.method === 'GET') {
+    if (!requireAdmin(req, res)) return;
+    safeJson(res, 200, await loadVoiceConfig());
+    return;
+  }
+  if (path === '/api/admin/voice-config' && req.method === 'POST') {
+    if (!requireAdmin(req, res)) return;
+    const body = await readBody(req);
+    const repeatCooldownMinutes = Number(body.repeatCooldownMinutes);
+    if (!Number.isInteger(repeatCooldownMinutes) || repeatCooldownMinutes < 1 || repeatCooldownMinutes > 1440) {
+      safeJson(res, 400, { message: 'El tiempo debe ser un número entero entre 1 y 1440 minutos.' });
+      return;
+    }
+    const config = { repeatCooldownMinutes };
+    await setState('cluss.voice', config);
+    broadcastTool('voice-config', config);
+    safeJson(res, 200, config);
     return;
   }
   if (path === '/api/admin/game-tools/reset' && req.method === 'POST') {

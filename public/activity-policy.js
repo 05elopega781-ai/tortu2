@@ -66,6 +66,29 @@
       var hash = 0;
       for (var i = 0; i < name.length; i++) hash += name.charCodeAt(i);
       return hash % teamCount;
+    },
+    createIdleVisualAdvance: function () {
+      var meters = 0;
+      var lastAt = null;
+      return {
+        reset: function (now) {
+          meters = 0;
+          lastAt = Number(now);
+          if (!Number.isFinite(lastAt)) lastAt = Date.now();
+          return meters;
+        },
+        update: function (now, lastInteractionAt, enabled) {
+          var current = Number(now);
+          if (!Number.isFinite(current)) return meters;
+          var interaction = Number(lastInteractionAt);
+          var start = lastAt === null
+            ? current
+            : Math.max(lastAt, Number.isFinite(interaction) ? interaction : current);
+          if (enabled && lastAt !== null) meters += Math.max(0, current - start) / 1000;
+          lastAt = current;
+          return meters;
+        }
+      };
     }
   };
   window.TORTUWORLD_ACTIVITY_POLICY = Object.freeze(policy);
