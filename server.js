@@ -812,7 +812,7 @@ input{border:1px solid #31435a;background:#0a1220;color:var(--text);padding:.65r
 <section class="hero"><div><span class="eyebrow">Game operations / servidor 01</span><h1>Controla la partida.<br><em>Domina el live.</em></h1><p>Centro de mando organizado por unidades de negocio de TortuWorld.</p><div class="hero-actions"><a href="/">Abrir overlay ↗</a><button class="primary" id="voiceToggle">♫ Voz en off</button></div></div></section>
 <section class="stats"><article class="stat"><span class="stat-label">Eventos recibidos</span><strong id="eventCount">0</strong><small>En esta sesión</small></article><article class="stat"><span class="stat-label">Regalos recibidos</span><strong id="giftCount">0</strong><small>Contador del servidor</small></article><article class="stat"><span class="stat-label">Overlay</span><strong id="overlayState">Verificando</strong><small id="overlayClients">Buscando clientes activos</small></article></section>
 <nav class="unit-nav" id="businessUnits" aria-label="Unidades de negocio">
-<button class="active" data-unit="eventos">Eventos</button><button data-unit="usuarios">Usuarios</button><button data-unit="regalos">Regalos</button><button data-unit="equipos">Equipos</button><button data-unit="torneos">Torneos</button><button data-unit="estadisticas">Estadísticas</button><button data-unit="motor">Motor tiempo real</button><button data-unit="turbo-equipos">Turbo contador equipos</button><button data-unit="turbo-regalos">Turbo regalos</button><button data-unit="voz">Voz en off</button><button data-unit="honor">Cuadro de honor</button><button data-unit="narrador">Narrador</button><button data-unit="acciones">CTAs / Acciones</button><button data-unit="logs">Logs</button>
+<button type="button" class="active" data-unit="eventos">Eventos</button><button type="button" data-unit="usuarios">Usuarios</button><button type="button" data-unit="regalos">Regalos</button><button type="button" data-unit="equipos">Equipos</button><button type="button" data-unit="torneos">Torneos</button><button type="button" data-unit="estadisticas">Estadísticas</button><button type="button" data-unit="motor">Motor tiempo real</button><button type="button" data-unit="turbo-equipos">Turbo contador equipos</button><button type="button" data-unit="turbo-regalos">Turbo regalos</button><button type="button" data-unit="voz">Voz en off</button><button type="button" data-unit="honor">Cuadro de honor</button><button type="button" data-unit="narrador">Narrador</button><button type="button" data-unit="acciones">CTAs / Acciones</button><button type="button" data-unit="logs">Logs</button>
 </nav>
 <section class="panel business-panel" data-units="eventos"><header><h2><span class="icon">⚡</span> Eventos LIVE</h2><span class="pill">ÚLTIMOS 50</span></header><p class="subtle">Eventos recibidos en esta sesión: <b id="eventUnitCount">0</b>. Los más recientes aparecen primero.</p><p class="unit-empty" id="eventEmpty">Esperando el primer evento…</p><ol class="event-list" id="eventList" aria-live="polite"></ol><pre class="pre" id="tools" hidden></pre></section>
 <section class="panel business-panel" data-units="logs" id="logsPanel"><header><h2><span class="icon">📜</span> Logs técnicos</h2><span class="pill" id="logsCount">SESIÓN ACTUAL</span></header><p class="subtle">Avisos y errores recientes del servidor. Se conservan mientras esta sesión del servidor está activa.</p><div class="toolbar"><button id="refreshLogs">Actualizar</button></div><p class="unit-empty" id="logsEmpty">Sin registros técnicos todavía.</p><ol class="event-list" id="serverLogs" aria-live="polite"></ol><p class="message" id="logsError" role="status"></p></section>
@@ -833,12 +833,22 @@ const $=s=>document.querySelector(s),headers=()=>({'content-type':'application/j
 async function admin(path,body){const r=await fetch(path,{method:'POST',headers:headers(),credentials:'same-origin',body:JSON.stringify(body||{})});const j=await r.json();if(!r.ok)throw Error(j.message||r.status);return j}
 $('#logout').onclick=async()=>{await fetch('/api/admin/session',{method:'DELETE',credentials:'same-origin'});location.replace('/backend')};
 const unitButtons=[...document.querySelectorAll('[data-unit]')];
-function showUnit(unit){
- unitButtons.forEach(button=>button.classList.toggle('active',button.dataset.unit===unit));
- document.querySelectorAll('[data-units]').forEach(panel=>{panel.hidden=!panel.dataset.units.split(/\s+/).includes(unit)});
+function showUnit(unit,scrollToPanel=false){
+ unitButtons.forEach(button=>{const active=button.dataset.unit===unit;button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active))});
+ const panels=[...document.querySelectorAll('[data-units]')];
+ panels.forEach(panel=>{panel.hidden=!panel.dataset.units.split(/\\s+/).includes(unit)});
+ if(scrollToPanel)panels.find(panel=>panel.dataset.units.split(/\\s+/).includes(unit))?.scrollIntoView({behavior:'smooth',block:'start'});
  if(unit==='logs')loadTechnicalLogs();
 }
-unitButtons.forEach(button=>button.onclick=()=>{showUnit(button.dataset.unit);if(button.dataset.unit==='voz'||button.dataset.unit==='narrador')loadVoice();if(button.dataset.unit==='honor')loadHonorBoard()});
+$('#businessUnits').addEventListener('click',event=>{
+ const button=event.target.closest('button[data-unit]');
+ if(!button)return;
+ event.preventDefault();
+ const unit=button.dataset.unit;
+ showUnit(unit,true);
+ if(unit==='voz'||unit==='narrador')loadVoice();
+ if(unit==='honor')loadHonorBoard();
+});
 showUnit('eventos');
 $('#clock').textContent=new Date().toLocaleTimeString('es');
 setInterval(()=>$('#clock').textContent=new Date().toLocaleTimeString('es'),1000);

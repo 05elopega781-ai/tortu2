@@ -148,6 +148,7 @@ test('backend exposes business-unit buttons and live motor telemetry', async () 
     assert.match(html, /id="eventList"/);
     assert.match(html, /ÚLTIMOS 50/);
     assert.match(script, /while\(list\.children\.length>50\)/);
+    assert.match(html, /<button type="button" class="active" data-unit="eventos">/);
     const userPanel = html.match(/<section class="panel business-panel" data-units="usuarios">([\s\S]*?)<\/section>/)?.[1];
     assert.ok(userPanel);
     assert.match(userPanel, /id="currentUsername"/);
@@ -159,6 +160,43 @@ test('backend exposes business-unit buttons and live motor telemetry', async () 
     }
     assert.match(html, /id="serverLogs"/);
     assert.match(html, /Logs técnicos/);
+    const navigationStart = script.indexOf('const unitButtons=');
+    const navigationEnd = script.indexOf("$('#clock').textContent");
+    const navigationCode = script.slice(navigationStart, navigationEnd);
+    const buttons = ['eventos', 'usuarios'].map(unit => ({
+      dataset: { unit },
+      classList: { active: false, toggle(name, force) { if (name === 'active') this.active = force; } },
+      setAttribute(name, value) { this[name] = value; }
+    }));
+    const panels = ['eventos', 'usuarios'].map(units => ({
+      dataset: { units },
+      hidden: false,
+      scrolled: false,
+      scrollIntoView() { this.scrolled = true; }
+    }));
+    let navigationClick;
+    const navigation = { addEventListener(_type, listener) { navigationClick = listener; } };
+    const mockDocument = {
+      querySelectorAll(selector) { return selector === '[data-unit]' ? buttons : panels; },
+      querySelector(selector) { return selector === '#businessUnits' ? navigation : null; }
+    };
+    new Function('document', '$', 'loadTechnicalLogs', navigationCode)(
+      mockDocument,
+      selector => mockDocument.querySelector(selector),
+      () => {}
+    );
+    const clickUnit = unit => navigationClick({
+      target: { closest: () => buttons.find(button => button.dataset.unit === unit) },
+      preventDefault() {}
+    });
+    clickUnit('usuarios');
+    assert.equal(panels[0].hidden, true);
+    assert.equal(panels[1].hidden, false);
+    assert.equal(buttons[1].classList.active, true);
+    assert.equal(panels[1].scrolled, true);
+    clickUnit('eventos');
+    assert.equal(panels[0].hidden, false);
+    assert.equal(panels[1].hidden, true);
 
     const invalid = await fetch(`${baseUrl}/api/motor/telemetry`, {
       method: 'POST',
