@@ -109,7 +109,7 @@ function eventAvatar(data) {
   const user = eventUser(data);
   const candidates = [
     user.profilePictureUrl, user.profilePicture?.url, user.profilePicture?.urlList, user.profilePicture?.urls, user.profilePicture,
-    user.avatarUrl, user.avatarLarge, user.avatarLarger, user.avatarMedium, user.avatarThumb, user.avatar, user.userImage, user.imageUrl,
+    user.userDetails?.profilePictureUrls, user.avatarUrl, user.avatarLarge?.urlList, user.avatarLarge, user.avatarLarger, user.avatarMedium, user.avatarThumb, user.avatar, user.userImage, user.imageUrl,
     data?.profilePictureUrl, data?.profilePicture, data?.avatarUrl, data?.avatar, data?.userImage, data?.imageUrl
   ];
   for (const candidate of candidates) {

@@ -424,7 +424,7 @@ html{scroll-padding-top:env(safe-area-inset-top,0px)}
 html,body{height:100%;overflow:hidden}
 body{margin:0;background:var(--page);font-family:Inter,system-ui,sans-serif;color:#fff}
 #app{width:416px;height:746px;left:0;top:0;transform-origin:0 0;position:absolute;overflow:hidden;padding:14px 12px 16px;display:flex;flex-direction:column;gap:8px;background:radial-gradient(ellipse at center,rgba(0,0,0,0) 55%,rgba(0,0,0,.4)),repeating-linear-gradient(0deg,rgba(255,255,255,.05) 0 1px,transparent 1px 6px),repeating-linear-gradient(90deg,#c39561 0 62px,#6f4a28 62px 64px)}
-.overlay-version{position:absolute;right:7px;bottom:calc(var(--sb,0px) + 4px);z-index:20;padding:2px 6px;border:1px solid rgba(255,255,255,.28);border-radius:999px;background:rgba(35,24,14,.62);color:rgba(255,255,255,.72);font-size:9px;font-weight:800;letter-spacing:.08em;line-height:1.2;pointer-events:none}
+.overlay-version{position:absolute;left:7px;bottom:calc(var(--sb,0px) + 4px);z-index:20;padding:2px 6px;border:1px solid rgba(255,255,255,.28);border-radius:999px;background:rgba(35,24,14,.62);color:rgba(255,255,255,.72);font-size:9px;font-weight:800;letter-spacing:.08em;line-height:1.2;pointer-events:none}
 .title{flex:none;margin:0;background:linear-gradient(#faf3e2,#e2d6bb);border:2px solid #6b6f78;border-radius:9px;box-shadow:0 3px 6px rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;gap:6px;color:#2a2018;font-weight:800}
 .board{position:relative;display:flex;background:linear-gradient(#7a4e2a,#5a3a1e);border:3px solid #3f2713;border-radius:12px;box-shadow:inset 0 2px 5px rgba(0,0,0,.55),0 5px 10px rgba(0,0,0,.5)}
 .lanes{display:flex;flex:1;min-width:0}
@@ -568,8 +568,8 @@ body{margin:0;background:var(--page);font-family:Inter,system-ui,sans-serif;colo
 .pod .pr{position:absolute;background:#2b1708;color:#ffd566;font:800 8px/11px Inter,sans-serif;text-align:center;border:1px solid #ffd566;z-index:2}
 .hd .cn{letter-spacing:-.2px}
 .evs{display:flex;gap:2px;padding:3px 4px;background:linear-gradient(#7a4e2a,#5a3a1e);border:2px solid #3f2713;border-radius:10px;box-shadow:inset 0 1px 3px rgba(0,0,0,.5)}
-.gift-total{box-sizing:border-box;width:100%;min-height:34px;padding:2px 6px;border:1px solid #9a6b22;border-radius:7px;background:linear-gradient(#503915,#35240d);color:#fff;gap:5px;justify-content:center}
-.gift-total span{font-size:24px;font-weight:900;line-height:1;font-variant-numeric:tabular-nums}
+.gift-total{position:absolute;right:10px;bottom:calc(var(--sb,0px) + 56px);z-index:25;box-sizing:border-box;width:78px;height:60px;min-height:60px;padding:3px;border:3px solid #ffe14d;border-radius:12px;background:linear-gradient(145deg,#643600,#241408);color:#fff;box-shadow:0 0 0 2px rgba(0,0,0,.8),0 0 15px rgba(255,209,59,.8);gap:0;justify-content:center}
+.gift-total span{font-size:31px;font-weight:900;line-height:1;font-variant-numeric:tabular-nums;color:#ffe14d;text-shadow:0 2px 2px #000}
 .st{flex:1;min-width:0;display:flex;flex-direction:row;align-items:center;justify-content:center;gap:3px;line-height:1}
 .st b{font-weight:400}
 .st span{font:800 11px Inter,sans-serif;color:#fff;text-shadow:0 1px 1px #000;white-space:nowrap}
@@ -644,7 +644,7 @@ body{margin:0;background:var(--page);font-family:Inter,system-ui,sans-serif;colo
 .fan-alerts{position:absolute;inset:0;z-index:11;pointer-events:none;overflow:visible}
 .fan-alert{position:absolute;left:var(--x);top:var(--y);transform:translate(-50%,-50%);display:flex;align-items:center;gap:3px;max-width:96%;padding:2px 5px;border:1px solid var(--c,#3f2713);border-radius:10px;background:rgba(255,255,255,.95);color:#2a2018;box-shadow:0 2px 5px rgba(0,0,0,.5);white-space:nowrap;animation:fanAlertIn .2s ease-out}
 .fan-alert .ua.hero{position:relative;display:grid;place-items:center;flex:none;width:25px;height:29px;border:2px solid var(--c,#3f2713);border-radius:50%;overflow:hidden;background:#eee;font-size:13px;line-height:1}
-.fan-alert .ua.hero img{width:100%;height:100%;object-fit:cover}
+.fan-alert .ua.hero img{width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .15s ease-out}
 .fan-alert .eb{font-size:13px}
 .fan-alert .en{max-width:54px;overflow:hidden;text-overflow:ellipsis;font:800 7px/1.1 Inter,sans-serif}
 @keyframes fanAlertIn{from{opacity:0;scale:.65}to{opacity:1;scale:1}}
@@ -1955,16 +1955,17 @@ function showEv(t,type,n,u){
  const alert=document.createElement('div'),lane=document.querySelector('#ln'+t),board=document.querySelector('.board');
  let x=(t+.5)/T.length*84;
  if(lane&&board){const laneBox=lane.getBoundingClientRect(),boardBox=board.getBoundingClientRect();if(boardBox.width)x=(laneBox.left+laneBox.width/2-boardBox.left)/boardBox.width*100}
- alert.className='fan-alert';alert.style.setProperty('--x',Math.max(8,Math.min(92,x+(Math.random()-.5)*8))+'%');alert.style.setProperty('--y',(10+Math.random()*78)+'%');alert.style.setProperty('--c',d[1]);
+ alert.className='fan-alert';alert.dataset.userKey=String(info&&info.key||'');alert.style.setProperty('--x',Math.max(8,Math.min(92,x+(Math.random()-.5)*8))+'%');alert.style.setProperty('--y',(10+Math.random()*78)+'%');alert.style.setProperty('--c',d[1]);
  const avatar=document.createElement('span');avatar.className='ua hero';
  const name=String(info&&info.name||'');
  const url=String(info&&info.url||'');
- if(/^https?:\/\//i.test(url))setAvatarImage(avatar,url);else if(name)avatar.textContent=[...name][0].toUpperCase();
+ if(name)avatar.textContent=[...name][0].toUpperCase();
+ if(/^https?:\/\//i.test(url))setAvatarImage(avatar,url);
  avatar.title=name?'@'+name:'';
  const badge=document.createElement('b');badge.className='eb';badge.textContent=d[0]+(type==='like'&&Number(n)>1?' ×'+Math.floor(Number(n)):'');
  const label=document.createElement('span');label.className='en';label.textContent=name?(info&&info.username?'@'+info.username:name):'';
  alert.append(avatar,badge,label);layer.append(alert);
- let timer;timer=setTimeout(()=>{alert.remove();eventTimers.delete(timer)},2200);eventTimers.add(timer);
+ let timer;timer=setTimeout(()=>{alert.remove();eventTimers.delete(timer)},5200);eventTimers.add(timer);
 }
 /* el nido se llena sin pasarse: expulsa al MAS ANTIGUO, salvo al de mejor puntaje del equipo (ese se queda) */
 function trimNest(t){const l=recent[t],max=NEST_EGGS+FRONT_EGGS;
@@ -1973,11 +1974,17 @@ function trimNest(t){const l=recent[t],max=NEST_EGGS+FRONT_EGGS;
 function grow(i,d){if(!T[i])return;gs[i]=Math.min(2.5,gs[i]+d);$('#in'+i).style.setProperty('--s',gs[i])}
 /* Pone la foto https del usuario sobre su inicial; si falla la carga queda la inicial */
 function setAvatarImage(el,url){
- if(!/^https?:\/\//i.test(url))return;
+ if(!el||!/^https:\/\//i.test(url))return;
  const previous=el.querySelector('img');
  if(previous&&previous.getAttribute('src')===url)return;
  if(previous)previous.remove();
- const im=new Image();im.referrerPolicy='no-referrer';im.alt='';im.onerror=()=>im.remove();im.src=url;el.append(im);
+ const im=new Image();let attempts=0;im.referrerPolicy='no-referrer';im.alt='';im.decoding='async';im.setAttribute('fetchpriority','high');im.onload=()=>{
+  const reveal=()=>{if(im.isConnected&&im.naturalWidth>0)im.style.opacity='1'};
+  if(typeof im.decode==='function')im.decode().then(reveal,reveal);else reveal();
+ };im.onerror=()=>{
+  if(attempts<2&&el.isConnected){attempts++;setTimeout(()=>{if(im.isConnected)im.src=url},500*attempts)}
+  else im.remove()
+ };el.append(im);im.src=url;
 }
 /* Un evento REAL: su usuario pasa al frente del nido y el anterior baja a los huevos (el bot nunca llega aqui) */
 function avatar(e){
@@ -1986,6 +1993,7 @@ function avatar(e){
  const k=(username||'display:'+displayName).toLowerCase(),t=supportTeamFor(k);
  const url=String(e.profilePictureUrl||e.profilePicture||e.avatarUrl||e.avatar||e.userImage||e.imageUrl||'');
  if(t==null||!T[t])return;
+ if(url){const layer=$('#event-alerts');if(layer)layer.querySelectorAll('.fan-alert').forEach(alert=>{if(alert.dataset.userKey===k)setAvatarImage(alert.querySelector('.ua.hero'),url)})}
  known.set(k,{key:k,name:u,url:url||(known.get(k)&&known.get(k).url)||'',t});
  if(over)return;
  const sc=(userScore.get(k)||0)+(SCORE[e.type]||0)*(e.type==='like'?Math.max(1,Math.floor(Number(e.activityCount))||1):1);userScore.set(k,sc); /* cada evento sube su puntaje */
@@ -3007,7 +3015,7 @@ const a=document.getElementById('app'),r=document.documentElement;
 r.style.setProperty('--st',ST+'px');r.style.setProperty('--sb',SB+'px');
 /* barra de herramientas (usuario + botones en una fila) y debajo la franja de estadisticas */
 const evs=document.getElementById('evs'),giftTotal=document.querySelector('.gift-total'),foot=document.querySelector('.foot');
-if(evs&&foot){const tb=document.createElement('div');tb.id='topbar';a.appendChild(tb);tb.append(evs);if(giftTotal)tb.append(giftTotal);tb.append(foot)} /* estadisticas y contador de regalos ARRIBA, herramientas debajo */
+if(evs&&foot){const tb=document.createElement('div');tb.id='topbar';a.appendChild(tb);tb.append(evs);tb.append(foot)} /* estadisticas y herramientas ARRIBA */
 /* El ancho logico sigue en 416; el alto se estira al de la pantalla (9:16) en vez de dejar franjas vacias */
 function fit(){
  const w=innerWidth,h=innerHeight,H=Math.max(746,Math.min(1000,Math.round(416*h/w))),k=Math.min(w/416,h/H);
