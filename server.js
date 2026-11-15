@@ -52,6 +52,7 @@ const adminSessions = new Map();
 const recentUsers = [];
 const seenEventIds = new Map();
 const comboCounts = new Map();
+const technicalLogs = [];
 const pendingCountryComments = Object.fromEntries([...COUNTRIES.map(country => country.code), 'sin-pais'].map(code => [code, 0]));
 const connection = { connected: false, status: 'connecting', username: '' };
 let connector = null;
@@ -63,6 +64,7 @@ let shuttingDown = false;
 let adminToken = process.env.BACKEND_ADMIN_TOKEN || '';
 const ADMIN_SESSION_COOKIE = 'tortu_admin_session';
 const ADMIN_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+const MAX_TECHNICAL_LOGS = 200;
 let chatMetaQueue = Promise.resolve();
 let settings = {
   username: '',
@@ -187,9 +189,26 @@ function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+function safeLogMessage(value) {
+  return String(value || '')
+    .replace(/[\r\n\t]+/g, ' ')
+    .replace(/Bearer\s+\S+/gi, 'Bearer [redactado]')
+    .replace(/\b(token|password|secret|authorization)\s*[:=]\s*\S+/gi, '$1=[redactado]')
+    .slice(0, 500);
+}
+
+function recordTechnicalLog(level, message) {
+  const entry = { timestamp: Date.now(), level, message: safeLogMessage(message) };
+  technicalLogs.unshift(entry);
+  if (technicalLogs.length > MAX_TECHNICAL_LOGS) technicalLogs.length = MAX_TECHNICAL_LOGS;
+  if (level === 'error') console.error(entry.message);
+  else console.log(entry.message);
+}
+
 function setStatus(status, connected) {
   connection.status = status;
   connection.connected = connected;
+  recordTechnicalLog('info', `TikTok: ${status}${connection.username ? ` · @${connection.username}` : ''}`);
   broadcastSse(clients, 'status', { connected, status, username: connection.username });
 }
 
@@ -332,7 +351,7 @@ async function appendRecords(flow, records) {
     await appendFile(path, clean.map(record => JSON.stringify(record)).join('\n') + '\n', 'utf8');
     if (flow === 'chat-texts') {
       chatMetaQueue = chatMetaQueue.catch(error => {
-        console.error('Falló la actualización del índice del chat:', error.message);
+        recordTechnicalLog('error', `Falló la actualización del índice del chat: ${error.message}`);
       }).then(async () => {
         const metaPath = resolve(DATA_DIR, 'chat-archive-meta.json');
         const meta = await loadJson(metaPath, { v: 1, created: clean[0][0], updated: clean[0][0], trimmed: 0, count: 0 });
@@ -459,7 +478,7 @@ async function createConnection(username) {
       try {
         await previousConnection.disconnect();
       } catch (error) {
-        console.error('No se pudo cerrar la conexión anterior de TikTok:', error.message);
+        recordTechnicalLog('error', `No se pudo cerrar la conexión anterior de TikTok: ${error.message}`);
       }
     }
     if (attemptId !== connectionAttemptId) return;
@@ -511,7 +530,7 @@ async function createConnection(username) {
       try {
         await attemptConnection.disconnect();
       } catch (disconnectError) {
-        console.error('No se pudo cerrar el intento de TikTok:', disconnectError.message);
+        recordTechnicalLog('error', `No se pudo cerrar el intento de TikTok: ${disconnectError.message}`);
       }
     }
     if (attemptId !== connectionAttemptId) return;
@@ -530,7 +549,7 @@ function scheduleReconnect(error) {
   if (now >= retryDeadline) {
     setStatus('failed', false);
     retryDeadline = 0;
-    console.error(`TikTok: ciclo de reconexión agotado: ${error.message}`);
+    recordTechnicalLog('error', `TikTok: ciclo de reconexión agotado: ${error.message}`);
     return;
   }
   retryCount++;
@@ -555,7 +574,7 @@ function handleTikTokEvent(type, raw) {
     if (entry.activityCount < 1) return;
     entry.giftDiamonds *= entry.activityCount;
     settings.giftCount += entry.activityCount;
-    void persistSettings().catch(error => console.error('No se pudo guardar el contador de regalos:', error.message));
+    void persistSettings().catch(error => recordTechnicalLog('error', `No se pudo guardar el contador de regalos: ${error.message}`));
     broadcastTool('game-tools', { timerStartedAt: settings.timerStartedAt, giftCount: settings.giftCount });
     sendWhatsApp({ type: 'gift', username: entry.username, giftName: entry.giftName, activityCount: entry.activityCount, giftDiamonds: entry.giftDiamonds });
   }
@@ -565,13 +584,13 @@ function handleTikTokEvent(type, raw) {
     recentUsers.unshift({ username: entry.username, avatar: entry.profilePictureUrl });
     recentUsers.splice(4);
     settings.recentUsers = recentUsers.slice();
-    void persistSettings().catch(error => console.error('No se pudo guardar la lista de usuarios recientes:', error.message));
+    void persistSettings().catch(error => recordTechnicalLog('error', `No se pudo guardar la lista de usuarios recientes: ${error.message}`));
   } else if (entry.username) {
     const user = recentUsers.find(item => item.username.toLowerCase() === entry.username.toLowerCase());
     if (user && entry.profilePictureUrl) {
       user.avatar = entry.profilePictureUrl;
       settings.recentUsers = recentUsers.slice();
-      void persistSettings().catch(error => console.error('No se pudo guardar el avatar del usuario:', error.message));
+      void persistSettings().catch(error => recordTechnicalLog('error', `No se pudo guardar el avatar del usuario: ${error.message}`));
     }
   }
   if (type === 'chat') {
@@ -579,17 +598,19 @@ function handleTikTokEvent(type, raw) {
     pendingCountryComments[country ? country.code : 'sin-pais']++;
     if (settings.tournamentEnabled && entry.username) void registerTournamentVote(entry.username, entry.content);
   }
+  const receivedAt = Date.now();
+  entry.receivedAt = receivedAt;
   broadcastSse(clients, 'update', { entry });
   void appendRecords('user-events', [{
     u: entry.username,
     name: entry.username,
-    t: Date.now(),
+    t: receivedAt,
     type,
     n: entry.activityCount,
     ...(entry.content ? { text: entry.content } : {}),
     ...(entry.giftName ? { gift: entry.giftName } : {}),
     ...(type === 'gift' ? { giftDiamonds: entry.giftDiamonds } : {})
-  }]).catch(error => console.error('No se pudo guardar el evento de usuario:', error.message));
+  }]).catch(error => recordTechnicalLog('error', `No se pudo guardar el evento de usuario: ${error.message}`));
 }
 
 async function sendWhatsApp(event) {
@@ -605,7 +626,7 @@ async function sendWhatsApp(event) {
     });
     if (!response.ok) throw new Error(`webhook respondió ${response.status}`);
   } catch (error) {
-    console.error('No se pudo enviar la alerta de WhatsApp:', error.message);
+    recordTechnicalLog('error', `No se pudo enviar la alerta de WhatsApp: ${error.message}`);
   }
 }
 
@@ -775,26 +796,27 @@ input{border:1px solid #31435a;background:#0a1220;color:var(--text);padding:.65r
 .shell{max-width:1240px;margin:auto;padding:0 28px 42px}.topbar{height:82px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #203044}
 .brand{display:flex;align-items:center;gap:12px;color:inherit;text-decoration:none}.brandmark{width:42px;height:42px;border-radius:13px;display:grid;place-items:center;background:linear-gradient(145deg,#8ff3c0,#54d8ee);color:#08202a;font-size:17px;font-weight:950;box-shadow:0 0 26px #62e6ff30}.brand b{letter-spacing:.13em;font-size:13px}.brand small{display:block;color:var(--muted);font-size:10px;letter-spacing:.18em}
 .topmeta{display:flex;align-items:center;gap:18px;color:var(--muted);font-size:12px}.live-tag,.pill{display:inline-flex;align-items:center;gap:8px;border:1px solid #29465b;border-radius:999px;padding:6px 11px;background:#0d1a26;color:#b9d1e6;font-size:10px;font-weight:800;letter-spacing:.1em}.dot{width:7px;height:7px;border-radius:50%;background:var(--lime);box-shadow:0 0 12px var(--lime)}
-.hero{padding:42px 0 22px;display:grid;grid-template-columns:1.35fr .85fr;gap:36px;align-items:end}.eyebrow{color:var(--cyan);font-size:10px;font-weight:800;letter-spacing:.2em;text-transform:uppercase}.hero h1{font-size:clamp(34px,5vw,56px);line-height:1.03;letter-spacing:-.05em;margin:12px 0}.hero h1 em{font-style:normal;color:var(--lime)}.hero p{color:var(--muted);max-width:570px;margin:0}.hero-actions{display:flex;gap:10px;align-items:center;margin-top:22px}.hero-actions a{color:var(--cyan);text-decoration:none;font-weight:700;padding:10px 12px}
-.connection-card,.panel,.stat{border:1px solid var(--line);border-radius:15px;background:linear-gradient(145deg,#142033,#0f1725);box-shadow:0 16px 40px #0002}.connection-card{padding:18px}.connection-card header,.panel header{display:flex;align-items:center;justify-content:space-between;gap:12px}.connection-card h2,.panel h2{margin:0;font-size:14px;letter-spacing:.02em}.status-pill{color:var(--amber);font-size:11px;font-weight:800}.status-pill.online{color:var(--lime)}.subtle{font-size:12px;color:var(--muted)}
+.hero{padding:42px 0 22px;display:grid;grid-template-columns:1fr;gap:36px;align-items:end}.eyebrow{color:var(--cyan);font-size:10px;font-weight:800;letter-spacing:.2em;text-transform:uppercase}.hero h1{font-size:clamp(34px,5vw,56px);line-height:1.03;letter-spacing:-.05em;margin:12px 0}.hero h1 em{font-style:normal;color:var(--lime)}.hero p{color:var(--muted);max-width:570px;margin:0}.hero-actions{display:flex;gap:10px;align-items:center;margin-top:22px}.hero-actions a{color:var(--cyan);text-decoration:none;font-weight:700;padding:10px 12px}
+.connection-card,.panel,.stat{border:1px solid var(--line);border-radius:15px;background:linear-gradient(145deg,#142033,#0f1725);box-shadow:0 16px 40px #0002}.connection-card{padding:18px}.connection-card header,.panel header{display:flex;align-items:center;justify-content:space-between;gap:12px}.connection-card h2,.panel h2{margin:0;font-size:14px;letter-spacing:.02em}.status-pill{color:var(--amber);font-size:11px;font-weight:800}.status-pill.online{color:var(--lime)}.subtle{font-size:12px;color:var(--muted)}.user-connection{margin-top:16px}
 .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:18px 0 14px}.stat{padding:15px 17px}.stat-label{display:block;color:var(--muted);font-size:10px;font-weight:750;letter-spacing:.12em;text-transform:uppercase}.stat strong{display:block;font-size:22px;margin-top:7px;letter-spacing:-.03em}.stat small{color:var(--muted)}
 .unit-nav{display:flex;gap:8px;overflow-x:auto;padding:7px 2px 14px;margin:4px 0 8px;scrollbar-width:thin}.unit-nav button{flex:0 0 auto;padding:.58rem .85rem;font-size:12px}.unit-nav button.active{border-color:var(--cyan);background:#173449;color:#fff;box-shadow:0 0 0 2px #62e6ff18}
 .layout{display:grid;grid-template-columns:1.2fr .8fr;gap:14px}.panel{padding:19px;margin-bottom:14px}.panel header{margin-bottom:16px}.panel h2{display:flex;align-items:center;gap:9px}.icon{width:30px;height:30px;border-radius:9px;display:inline-grid;place-items:center;background:#1b3341;color:var(--cyan)}
 .voice-panel{border-color:#355654;background:linear-gradient(140deg,#13231f,#101827)}.voice-order{list-style:none;padding:0;margin:15px 0 0;display:grid;gap:9px}.voice-card{display:grid;grid-template-columns:39px 1fr auto;gap:12px;align-items:start;padding:13px;border:1px solid #294237;border-radius:11px;background:#0d191b}.voice-rank{width:34px;height:34px;display:grid;place-items:center;border-radius:10px;color:#0a1a1b;background:var(--lime);font-weight:950}.voice-copy b{font-size:13px}.voice-copy p{margin:3px 0;color:var(--muted);font-size:12px}.voice-copy small{display:block;color:#a8c0bd;overflow-wrap:anywhere;font-size:11px}.voice-level{color:#8da69e;font-size:9px;letter-spacing:.08em;font-weight:800}.voice-hint{margin:12px 0 0;padding:10px 12px;background:#152b24;border-radius:9px;color:#c4e7c4;font-size:12px}
 .form-row{display:flex;flex-wrap:wrap;gap:10px;align-items:end}.field{display:grid;gap:5px;color:var(--muted);font-size:11px}.field input{width:130px}.field.token{min-width:min(100%,340px);flex:1}.field.token input{width:100%}.toolbar{display:flex;flex-wrap:wrap;gap:8px;margin-top:15px}.toolbar p{display:flex;gap:8px;margin:0;flex-wrap:wrap}.checkrow{display:flex;align-items:center;gap:9px;color:#c9d6e5}.checkrow input{accent-color:var(--lime)}.message{min-height:24px;color:var(--cyan);font-size:12px;margin:14px 0 0}.pre{padding:11px;border:1px solid #25374a;border-radius:9px;background:#0a111c;color:#b9c9dc;white-space:pre-wrap;overflow-wrap:anywhere;font:11px/1.5 ui-monospace,Consolas,monospace;max-height:230px;overflow:auto}.country-box{margin-top:12px}.motor-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.motor-card{border:1px solid #25374a;border-radius:11px;background:#0a111c;padding:12px}.motor-card h3{margin:0 0 8px;font-size:13px}.motor-card .meter{height:8px;background:#1a2938;border-radius:8px;overflow:hidden;margin:8px 0}.motor-card .meter i{display:block;height:100%;background:linear-gradient(90deg,#62e6ff,#a4f36d)}.motor-values{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;color:var(--muted);font-size:11px}.motor-values b{color:var(--text);font-weight:700}.unit-empty{padding:14px;border:1px dashed #29465b;border-radius:10px;color:var(--muted)}.server-footer{display:flex;justify-content:space-between;gap:12px;color:#657b94;font-size:10px;padding:18px 0}
-@media(max-width:850px){.hero,.layout{grid-template-columns:1fr}.hero{gap:20px;padding-top:30px}.connection-card{max-width:none}}@media(max-width:560px){.shell{padding:0 14px 28px}.topbar{height:68px}.topmeta{gap:8px}.live-tag{font-size:9px}.hero h1{font-size:37px}.stats{gap:7px}.stat{padding:12px 10px}.stat strong{font-size:18px}.panel{padding:15px}.voice-card{grid-template-columns:34px 1fr}.voice-level{grid-column:2}.field.token{min-width:100%}}
+.event-list{list-style:none;padding:0;margin:0;display:grid;gap:8px;max-height:430px;overflow-y:auto}.event-row{display:grid;grid-template-columns:72px 100px minmax(100px,.55fr) minmax(0,1.45fr);gap:10px;align-items:start;padding:10px 12px;border:1px solid #25374a;border-radius:9px;background:#0a111c;font-size:12px}.event-row time,.event-user{color:var(--muted)}.event-kind{color:var(--cyan);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.04em}.event-detail{overflow-wrap:anywhere;white-space:pre-wrap}.log-row{display:grid;grid-template-columns:78px 70px minmax(0,1fr);gap:10px;align-items:start;padding:10px 12px;border:1px solid #25374a;border-radius:9px;background:#0a111c;font-size:12px}.log-row time{color:var(--muted)}.log-level{font-size:10px;font-weight:800;letter-spacing:.05em}.log-level.error{color:var(--red)}.log-level.info{color:var(--cyan)}.log-message{overflow-wrap:anywhere;white-space:pre-wrap}
+@media(max-width:850px){.hero,.layout{grid-template-columns:1fr}.hero{gap:20px;padding-top:30px}.connection-card{max-width:none}}@media(max-width:560px){.shell{padding:0 14px 28px}.topbar{height:68px}.topmeta{gap:8px}.live-tag{font-size:9px}.hero h1{font-size:37px}.stats{gap:7px}.stat{padding:12px 10px}.panel{padding:15px}.voice-card{grid-template-columns:34px 1fr}.voice-level{grid-column:2}.field.token{min-width:100%}.event-row{grid-template-columns:60px 1fr;gap:6px}.event-user,.event-detail{grid-column:2}.event-kind{grid-column:1;grid-row:2}.log-row{grid-template-columns:60px 1fr;gap:6px}.log-message{grid-column:2}}
 </style></head>
 <body><div class="shell">
 <header class="topbar"><a class="brand" href="/backend"><span class="brandmark">NG</span><span><b>NEGOCIO</b><small>GAME SERVER · CONTROL ROOM</small></span></a><div class="topmeta"><span class="live-tag"><i class="dot"></i> LIVE OPS</span><span id="clock">--:--:--</span></div></header>
 <main>
-<section class="hero"><div><span class="eyebrow">Game operations / servidor 01</span><h1>Controla la partida.<br><em>Domina el live.</em></h1><p>Centro de mando organizado por unidades de negocio de TortuWorld.</p><div class="hero-actions"><a href="/">Abrir overlay ↗</a><button class="primary" id="voiceToggle">♫ Voz en off</button></div></div>
-<article class="connection-card" data-units="usuarios acciones"><header><h2>Conexión TikTok</h2><span class="status-pill" id="status">CONECTANDO</span></header><p class="subtle" id="statusDetail">Esperando estado del servidor…</p><form id="connect" class="form-row"><label class="field">Usuario del live<input name="username" placeholder="usuario sin @" required></label><button class="primary">Conectar</button><button type="button" id="reconnect">Reintentar</button></form></article></section>
+<section class="hero"><div><span class="eyebrow">Game operations / servidor 01</span><h1>Controla la partida.<br><em>Domina el live.</em></h1><p>Centro de mando organizado por unidades de negocio de TortuWorld.</p><div class="hero-actions"><a href="/">Abrir overlay ↗</a><button class="primary" id="voiceToggle">♫ Voz en off</button></div></div></section>
 <section class="stats"><article class="stat"><span class="stat-label">Eventos recibidos</span><strong id="eventCount">0</strong><small>En esta sesión</small></article><article class="stat"><span class="stat-label">Regalos recibidos</span><strong id="giftCount">0</strong><small>Contador del servidor</small></article><article class="stat"><span class="stat-label">Overlay</span><strong id="overlayState">Verificando</strong><small id="overlayClients">Buscando clientes activos</small></article></section>
 <nav class="unit-nav" id="businessUnits" aria-label="Unidades de negocio">
-<button class="active" data-unit="eventos">Eventos</button><button data-unit="usuarios">Usuarios</button><button data-unit="regalos">Regalos</button><button data-unit="equipos">Equipos</button><button data-unit="torneos">Torneos</button><button data-unit="estadisticas">Estadísticas</button><button data-unit="motor">Motor tiempo real</button><button data-unit="turbo-equipos">Turbo contador equipos</button><button data-unit="turbo-regalos">Turbo regalos</button><button data-unit="voz">Voz en off</button><button data-unit="honor">Cuadro de honor</button><button data-unit="narrador">Narrador</button><button data-unit="acciones">CTAs / Acciones</button>
+<button class="active" data-unit="eventos">Eventos</button><button data-unit="usuarios">Usuarios</button><button data-unit="regalos">Regalos</button><button data-unit="equipos">Equipos</button><button data-unit="torneos">Torneos</button><button data-unit="estadisticas">Estadísticas</button><button data-unit="motor">Motor tiempo real</button><button data-unit="turbo-equipos">Turbo contador equipos</button><button data-unit="turbo-regalos">Turbo regalos</button><button data-unit="voz">Voz en off</button><button data-unit="honor">Cuadro de honor</button><button data-unit="narrador">Narrador</button><button data-unit="acciones">CTAs / Acciones</button><button data-unit="logs">Logs</button>
 </nav>
-<section class="panel business-panel" data-units="eventos"><header><h2><span class="icon">⚡</span> Eventos LIVE</h2><span class="pill">FLUJO EN VIVO</span></header><p class="subtle">Eventos recibidos en esta sesión: <b id="eventUnitCount">0</b>. Los regalos y el estado de conexión también se muestran arriba.</p><pre class="pre" id="lastMotorEvent">Esperando el primer evento…</pre><pre class="pre" id="tools" hidden></pre></section>
-<section class="panel business-panel" data-units="usuarios"><header><h2><span class="icon">👤</span> Usuarios recientes</h2><span class="pill">LIVE</span></header><pre class="pre" id="recentUsers">Cargando usuarios…</pre></section>
+<section class="panel business-panel" data-units="eventos"><header><h2><span class="icon">⚡</span> Eventos LIVE</h2><span class="pill">ÚLTIMOS 50</span></header><p class="subtle">Eventos recibidos en esta sesión: <b id="eventUnitCount">0</b>. Los más recientes aparecen primero.</p><p class="unit-empty" id="eventEmpty">Esperando el primer evento…</p><ol class="event-list" id="eventList" aria-live="polite"></ol><pre class="pre" id="tools" hidden></pre></section>
+<section class="panel business-panel" data-units="logs" id="logsPanel"><header><h2><span class="icon">📜</span> Logs técnicos</h2><span class="pill" id="logsCount">SESIÓN ACTUAL</span></header><p class="subtle">Avisos y errores recientes del servidor. Se conservan mientras esta sesión del servidor está activa.</p><div class="toolbar"><button id="refreshLogs">Actualizar</button></div><p class="unit-empty" id="logsEmpty">Sin registros técnicos todavía.</p><ol class="event-list" id="serverLogs" aria-live="polite"></ol><p class="message" id="logsError" role="status"></p></section>
+<section class="panel business-panel" data-units="usuarios"><header><h2><span class="icon">👤</span> Usuarios</h2><span class="pill">LIVE</span></header><pre class="pre" id="recentUsers">Cargando usuarios…</pre><article class="connection-card user-connection"><header><h2>Conexión TikTok</h2><span class="status-pill" id="status">CONECTANDO</span></header><p class="subtle">Usuario actual: <b id="currentUsername">Sin usuario</b></p><p class="subtle" id="statusDetail">Esperando estado del servidor…</p><form id="connect" class="form-row"><label class="field">Usuario del live<input name="username" placeholder="Ingresa el usuario sin @" required></label><button class="primary">Conectar</button><button type="button" id="reconnect">Reintentar</button></form></article></section>
 <section class="panel business-panel" data-units="regalos turbo-regalos"><header><h2><span class="icon">🎁</span> Regalos y turbo de regalos</h2><span class="pill">CONTROL</span></header><p class="subtle">Total recibidos: <b id="giftUnitCount">0</b></p><div class="form-row"><label class="field">Avance total del turbo por regalos (%)<input id="gift" type="number" min="0" max="100" value="6"></label><button class="primary" id="saveGiftTurbo">Guardar turbo de regalos</button></div></section>
 <section class="panel business-panel" data-units="equipos turbo-equipos"><header><h2><span class="icon">🐢</span> Equipos y turbo del contador</h2><span class="pill">MOTOR</span></header><div class="form-row"><label class="field">Avance del turbo por taps (%)<input id="tap" type="number" min="0" max="100" value="20"></label><button class="primary" id="saveTapTurbo">Guardar turbo de equipos</button><button data-command="turbo-down">Turbo −</button><button data-command="turbo-up">Turbo +</button></div><div class="motor-grid" id="teamTelemetry"><div class="unit-empty">Esperando valores del motor…</div></div></section>
 <section class="panel business-panel" data-units="motor"><header><h2><span class="icon">⚙</span> Motor en tiempo real</h2><span class="pill" id="motorStatus">SIN TELEMETRÍA</span></header><p class="subtle">Valores actuales reportados por el overlay y retransmitidos por el servidor.</p><div class="stats"><article class="stat"><span class="stat-label">Fase</span><strong id="motorPhase">—</strong><small id="motorUpdated">Esperando al overlay</small></article><article class="stat"><span class="stat-label">Duración</span><strong id="motorElapsed">—</strong><small>Tiempo de carrera</small></article><article class="stat"><span class="stat-label">Inactividad</span><strong id="motorIdle">—</strong><small>Cuenta regresiva</small></article></div><p class="subtle">Ganador: <b id="motorWinner">—</b> · Eventos procesados: <b id="motorEvents">0</b></p><div class="motor-grid" id="motorTeams"><div class="unit-empty">El overlay debe estar abierto para publicar telemetría.</div></div><pre class="pre" id="motorStats">Estadísticas del motor: esperando datos…</pre></section>
@@ -814,11 +836,13 @@ const unitButtons=[...document.querySelectorAll('[data-unit]')];
 function showUnit(unit){
  unitButtons.forEach(button=>button.classList.toggle('active',button.dataset.unit===unit));
  document.querySelectorAll('[data-units]').forEach(panel=>{panel.hidden=!panel.dataset.units.split(/\s+/).includes(unit)});
+ if(unit==='logs')loadTechnicalLogs();
 }
 unitButtons.forEach(button=>button.onclick=()=>{showUnit(button.dataset.unit);if(button.dataset.unit==='voz'||button.dataset.unit==='narrador')loadVoice();if(button.dataset.unit==='honor')loadHonorBoard()});
 showUnit('eventos');
 $('#clock').textContent=new Date().toLocaleTimeString('es');
 setInterval(()=>$('#clock').textContent=new Date().toLocaleTimeString('es'),1000);
+$('#refreshLogs').onclick=loadTechnicalLogs;
 $('#connect').onsubmit=async e=>{e.preventDefault();try{const r=await fetch('/api/connect',{method:'POST',headers:{'content-type':'application/json'},credentials:'same-origin',body:JSON.stringify({username:e.target.username.value})});const j=await r.json();if(!r.ok)throw Error(j.message);msg('Conectando con @'+j.username)}catch(x){msg(x.message)}};
 $('#reconnect').onclick=async()=>{try{await admin('/api/admin/reconnect');msg('Reconexión solicitada')}catch(e){msg(e.message)}};
 $('#saveGiftTurbo').onclick=async()=>{try{await admin('/api/admin/game-settings',{giftTurboProgress:+$('#gift').value,tapTurboProgress:+$('#tap').value});msg('Turbo de regalos guardado')}catch(e){msg(e.message)}};
@@ -868,9 +892,46 @@ function renderMotor(state){
  $('#motorEvents').textContent=String(Object.values(state.stats||{}).reduce((sum,value)=>sum+(Number(value)||0),0));
  $('#motorStats').textContent=JSON.stringify(state.stats,null,2);renderMotorTeams(state.teams,$('#motorTeams'));renderMotorTeams(state.teams,$('#teamTelemetry'));
 }
+function renderTechnicalLogs(logs){
+ const list=$('#serverLogs');list.replaceChildren();$('#logsCount').textContent=logs.length+' REGISTROS';$('#logsEmpty').hidden=logs.length>0;
+ logs.forEach(log=>{
+  const row=document.createElement('li'),time=document.createElement('time'),level=document.createElement('span'),message=document.createElement('span'),timestamp=Number(log.timestamp);
+  const date=new Date(Number.isFinite(timestamp)?timestamp:Date.now());
+  row.className='log-row';time.dateTime=date.toISOString();time.textContent=date.toLocaleTimeString('es',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  level.className='log-level '+(log.level==='error'?'error':'info');level.textContent=String(log.level||'info').toUpperCase();
+  message.className='log-message';message.textContent=String(log.message||'');row.append(time,level,message);list.append(row);
+ });
+}
+async function loadTechnicalLogs(){
+ try{
+  const response=await fetch('/api/admin/logs?limit=200',{credentials:'same-origin',cache:'no-store'}),result=await response.json();
+  if(!response.ok)throw Error(result.message||response.status);
+  if(!Array.isArray(result.logs))throw Error('El servidor devolvió logs inválidos.');
+  renderTechnicalLogs(result.logs);$('#logsError').textContent='';
+ }catch(error){$('#logsError').textContent=error.message}
+}
+const eventLabels={member:'Se unió',chat:'Comentario',gift:'Regalo',like:'Me gusta',follow:'Seguidor',share:'Compartido'};
+function eventDetail(entry){
+ const count=Math.max(1,Math.floor(Number(entry.activityCount)||1));
+ if(entry.type==='chat')return entry.content||'Comentario';
+ if(entry.type==='gift')return (entry.giftName||'Regalo')+(count>1?' × '+count:'');
+ if(entry.type==='like')return count+' me gusta';
+ if(entry.type==='follow')return 'Empezó a seguir';
+ if(entry.type==='share')return 'Compartió el live';
+ return 'Se unió al live';
+}
+function renderLiveEvent(entry){
+ const list=$('#eventList'),row=document.createElement('li'),time=document.createElement('time'),kind=document.createElement('span'),user=document.createElement('span'),detail=document.createElement('span');
+ const receivedAt=Number(entry.receivedAt)||Date.now();
+ row.className='event-row';time.dateTime=new Date(receivedAt).toISOString();time.textContent=new Date(receivedAt).toLocaleTimeString('es',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+ kind.className='event-kind';kind.textContent=eventLabels[entry.type]||'Evento';user.className='event-user';user.textContent=entry.username?'@'+entry.username:'—';
+ detail.className='event-detail';detail.textContent=eventDetail(entry);row.append(time,kind,user,detail);$('#eventEmpty').hidden=true;list.prepend(row);
+ while(list.children.length>50)list.lastElementChild.remove();
+}
 let received=0;const source=new EventSource('/api/events');
-source.addEventListener('status',e=>{const s=JSON.parse(e.data),online=!!s.connected;$('#status').textContent=online?'ONLINE':String(s.status||'DESCONECTADO').toUpperCase();$('#status').classList.toggle('online',online);$('#statusDetail').textContent=online?'Conectado a @'+(s.username||'TikTok'):'Estado del conector: '+(s.status||'sin conexión')+(s.username?' · @'+s.username:'')});
-source.addEventListener('update',e=>{const payload=JSON.parse(e.data),entry=payload.entry||{};received++;$('#eventCount').textContent=String(received);$('#eventUnitCount').textContent=String(received);$('#lastMotorEvent').textContent=JSON.stringify({type:entry.type,username:entry.username,activityCount:entry.activityCount,giftName:entry.giftName,content:entry.content},null,2)});
+source.addEventListener('status',e=>{const s=JSON.parse(e.data),online=!!s.connected;$('#status').textContent=online?'ONLINE':String(s.status||'DESCONECTADO').toUpperCase();$('#status').classList.toggle('online',online);$('#currentUsername').textContent=s.username?'@'+s.username:'Sin usuario';$('#statusDetail').textContent=online?'Conectado a @'+(s.username||'TikTok'):'Estado del conector: '+(s.status||'sin conexión')+(s.username?' · @'+s.username:'')});
+source.addEventListener('update',e=>{const payload=JSON.parse(e.data),entry=payload.entry||{};received++;$('#eventCount').textContent=String(received);$('#eventUnitCount').textContent=String(received);renderLiveEvent(entry)});
+setInterval(()=>{if(!$('#logsPanel').hidden)loadTechnicalLogs()},5000);
 const motorSource=new EventSource('/api/admin/motor/events');
 motorSource.addEventListener('motor-state',event=>renderMotor(JSON.parse(event.data)));
 setInterval(()=>{if(lastMotorUpdate&&Date.now()-lastMotorUpdate>2500){$('#motorStatus').textContent='TELEMETRÍA ATRASADA';$('#motorStatus').classList.remove('online')}},1000);
@@ -966,6 +1027,16 @@ async function handle(req, res) {
   if (path === '/api/admin/motor/events' && req.method === 'GET') {
     if (!requireAdmin(req, res)) return;
     sse(req, res, motorClients, [['motor-state', motorTelemetry]]);
+    return;
+  }
+  if (path === '/api/admin/logs' && req.method === 'GET') {
+    if (!requireAdmin(req, res)) return;
+    const limitParam = url.searchParams.get('limit');
+    const requestedLimit = limitParam === null ? 100 : Number(limitParam);
+    const limit = Number.isFinite(requestedLimit)
+      ? Math.min(MAX_TECHNICAL_LOGS, Math.max(1, Math.floor(requestedLimit)))
+      : 100;
+    safeJson(res, 200, { logs: technicalLogs.slice(0, limit) });
     return;
   }
   if (path === '/api/game-tools/events' && req.method === 'GET') {
@@ -1251,7 +1322,7 @@ async function main() {
   await pruneLogs();
   setInterval(refreshOverlayPresence, 15000).unref();
   setInterval(() => {
-    void pruneLogs().catch(error => console.error('No se pudieron depurar logs:', error.message));
+    void pruneLogs().catch(error => recordTechnicalLog('error', `No se pudieron depurar logs: ${error.message}`));
   }, 15 * 60 * 1000).unref();
   setInterval(() => {
     const cutoff = Date.now() - 10 * 60 * 1000;
@@ -1259,13 +1330,13 @@ async function main() {
   }, 60000).unref();
   const server = createServer((req, res) => {
     void handle(req, res).catch(error => {
-      console.error('Error de solicitud:', error);
+      recordTechnicalLog('error', `Error de solicitud: ${error.message}`);
       if (!res.headersSent) safeJson(res, error.status || 500, { message: error.status ? error.message : 'Error interno del servidor.' });
       else res.destroy();
     });
   });
   server.listen(PORT, HOST, () => {
-    console.log(`TortuWorld escuchando en http://${HOST}:${PORT}`);
+    recordTechnicalLog('info', `TortuWorld escuchando en http://${HOST}:${PORT}`);
     const username = configuredUsername();
     if (username) void createConnection(username);
   });
@@ -1275,7 +1346,7 @@ async function main() {
     try {
       if (connector?.disconnect) await connector.disconnect();
     } catch (error) {
-      console.error('Error al cerrar TikTok:', error.message);
+      recordTechnicalLog('error', `Error al cerrar TikTok: ${error.message}`);
     }
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(1), 5000).unref();

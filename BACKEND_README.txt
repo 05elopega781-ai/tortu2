@@ -44,6 +44,7 @@
   POST   /api/admin/reconnect              inicia un nuevo ciclo de reconexion (admin).
   GET    /api/admin/presence               estado de presencia (admin).
   GET    /api/admin/country-stats           conteos por pais (admin).
+  GET    /api/admin/logs?limit=200         ultimos logs tecnicos de esta ejecucion (admin; maximo 200).
   GET    /activity-policy.js               script con la politica de taps (TAP_POLICY). [REVISAR: el comentario viejo decia /api/activity-policy.js]
   GET    /manifest.webmanifest y /sw.js    instalar como app.
   GET    /icons/tortu2-{192,512}.{png,svg} iconos de instalacion de la PWA Negocio.
@@ -253,6 +254,7 @@
   - Logs: data/logs/<flujo>.jsonl, append-only y lotes de maximo 200. chat-texts conserva solo [timestamp_ms,texto], sin autor.
     user-events conserva u, name, t, type y los campos n/text/gift permitidos; ambos flujos tienen retencion configurable de 1 a 90 dias
     (LOG_RETENTION_DAYS, predeterminado 90). Las descargas de chat son adjuntos JSON o TXT.
+    Los logs tecnicos del servidor viven en un buffer de memoria de hasta 200 entradas y se reinician al reiniciar el proceso.
   - Ronda: POST /api/round/complete cierra comentarios pendientes por pais y escribe un recibo bajo data/rounds; no calcula ganador,
     cuadro ni puntajes.
   - Paises: los 21 codigos ISO configurados son PY, AR, BR, UY, CL, BO, PE, CO, EC, VE, MX, US, CA, ES, PT, FR, GB, DE, IT, NL y JP;

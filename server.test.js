@@ -82,6 +82,8 @@ test('backend login protects the panel and admin APIs until a session cookie is 
     assert.match(await lockedPage.text(), /Acceso al backend/);
     const lockedApi = await fetch(`${baseUrl}/api/admin/presence`);
     assert.equal(lockedApi.status, 401);
+    const lockedLogs = await fetch(`${baseUrl}/api/admin/logs`);
+    assert.equal(lockedLogs.status, 401);
     const lockedConnect = await fetch(`${baseUrl}/api/connect`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -108,6 +110,9 @@ test('backend login protects the panel and admin APIs until a session cookie is 
     assert.match(await unlockedPage.text(), /Controla la partida/);
     const unlockedApi = await fetch(`${baseUrl}/api/admin/presence`, { headers: { cookie } });
     assert.equal(unlockedApi.status, 200);
+    const unlockedLogs = await fetch(`${baseUrl}/api/admin/logs?limit=20`, { headers: { cookie } });
+    assert.equal(unlockedLogs.status, 200);
+    assert.deepEqual((await unlockedLogs.json()).logs, []);
 
     const logout = await fetch(`${baseUrl}/api/admin/session`, { method: 'DELETE', headers: { cookie } });
     assert.equal(logout.status, 200);
@@ -140,9 +145,20 @@ test('backend exposes business-unit buttons and live motor telemetry', async () 
     const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
     assert.ok(script);
     assert.doesNotThrow(() => new Function(script));
-    for (const unit of ['eventos', 'usuarios', 'regalos', 'equipos', 'torneos', 'estadisticas', 'motor', 'turbo-equipos', 'turbo-regalos', 'voz', 'honor', 'narrador', 'acciones']) {
+    assert.match(html, /id="eventList"/);
+    assert.match(html, /ÚLTIMOS 50/);
+    assert.match(script, /while\(list\.children\.length>50\)/);
+    const userPanel = html.match(/<section class="panel business-panel" data-units="usuarios">([\s\S]*?)<\/section>/)?.[1];
+    assert.ok(userPanel);
+    assert.match(userPanel, /id="currentUsername"/);
+    assert.match(userPanel, /id="status"/);
+    assert.match(userPanel, /<form id="connect"/);
+    assert.match(userPanel, /name="username"/);
+    for (const unit of ['eventos', 'usuarios', 'regalos', 'equipos', 'torneos', 'estadisticas', 'motor', 'turbo-equipos', 'turbo-regalos', 'voz', 'honor', 'narrador', 'acciones', 'logs']) {
       assert.match(html, new RegExp(`data-unit="${unit}"`));
     }
+    assert.match(html, /id="serverLogs"/);
+    assert.match(html, /Logs técnicos/);
 
     const invalid = await fetch(`${baseUrl}/api/motor/telemetry`, {
       method: 'POST',
