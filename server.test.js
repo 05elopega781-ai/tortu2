@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
@@ -22,7 +23,7 @@ test('live event counters count events, not weighted interaction points', () => 
 });
 
 test('deployment check accepts the current signature and reloads a stale overlay once', async () => {
-  const html = readFileSync(new URL('./v21_voz_saludos_backend.html', import.meta.url), 'utf8');
+  const html = readFileSync(new URL('./overlay.html', import.meta.url), 'utf8');
   const script = html.match(/<script>\s*([\s\S]*?)<\/script>/)?.[1];
   assert.ok(script);
   const loadCheck = (pageSignature, serverSignature) => {
@@ -119,6 +120,116 @@ test('backend login protects the panel and admin APIs until a session cookie is 
   }
 });
 
+test('backend exposes business-unit buttons and live motor telemetry', async () => {
+  const previousToken = process.env.BACKEND_ADMIN_TOKEN;
+  process.env.BACKEND_ADMIN_TOKEN = 'motor-test-token';
+  const server = createServer((req, res) => void handle(req, res));
+  server.listen(0, '127.0.0.1');
+  await new Promise(resolve => server.once('listening', resolve));
+  const baseUrl = `http://127.0.0.1:${server.address().port}`;
+
+  try {
+    const login = await fetch(`${baseUrl}/api/admin/session`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ token: 'motor-test-token' })
+    });
+    const cookie = login.headers.get('set-cookie').split(';', 1)[0];
+    const page = await fetch(`${baseUrl}/backend`, { headers: { cookie } });
+    const html = await page.text();
+    const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
+    assert.ok(script);
+    assert.doesNotThrow(() => new Function(script));
+    for (const unit of ['eventos', 'usuarios', 'regalos', 'equipos', 'torneos', 'estadisticas', 'motor', 'turbo-equipos', 'turbo-regalos', 'voz', 'honor', 'narrador', 'acciones']) {
+      assert.match(html, new RegExp(`data-unit="${unit}"`));
+    }
+
+    const invalid = await fetch(`${baseUrl}/api/motor/telemetry`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ phase: 'running', teams: [] })
+    });
+    assert.equal(invalid.status, 400);
+
+    const telemetry = {
+      phase: 'running',
+      elapsedMs: 12000,
+      idleSeconds: 47,
+      winner: '',
+      stats: { like: 24, chat: 2 },
+      turbo: { tapProgress: 20, tapDurationMs: 7000, giftProgress: 6, giftDurationMs: 15000 },
+      teams: [
+        { id: 'ol', name: 'Olimpia', progress: 12.5, taps: 4, tapLimit: 50, eventTotal: 7, turboMs: 3000, giftTurboMs: 0 },
+        { id: 'cp', name: 'Cerro Porteño', progress: 9, taps: 0, tapLimit: 50, eventTotal: 2, turboMs: 0, giftTurboMs: 1000 }
+      ]
+    };
+    const overlayStream = await fetch(`${baseUrl}/api/events`);
+    const overlayReader = overlayStream.body.getReader();
+    await overlayReader.read();
+    const published = await fetch(`${baseUrl}/api/motor/telemetry`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(telemetry)
+    });
+    assert.equal(published.status, 200);
+    try {
+      const relayed = await overlayReader.read();
+      assert.match(new TextDecoder().decode(relayed.value), /event: motor-state[\s\S]*"phase":"running"/);
+    } finally {
+      await overlayReader.cancel();
+    }
+
+    const stream = await fetch(`${baseUrl}/api/admin/motor/events`, { headers: { cookie } });
+    assert.match(stream.headers.get('content-type'), /text\/event-stream/);
+    const reader = stream.body.getReader();
+    try {
+      const first = await reader.read();
+      assert.match(new TextDecoder().decode(first.value), /event: motor-state[\s\S]*"phase":"running"/);
+    } finally {
+      await reader.cancel();
+    }
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+    if (previousToken === undefined) delete process.env.BACKEND_ADMIN_TOKEN;
+    else process.env.BACKEND_ADMIN_TOKEN = previousToken;
+  }
+});
+
+test('overlay keeps its race design and opens monitor tabs matching the backend units', () => {
+  const html = readFileSync(new URL('./overlay.html', import.meta.url), 'utf8');
+  assert.match(html, /<main id="app">/);
+  assert.match(html, /id="bMonitor"/);
+  assert.match(html, /aria-label="Monitor por unidad de negocio"/);
+  for (const unit of ['eventos', 'usuarios', 'regalos', 'equipos', 'torneos', 'estadisticas', 'motor', 'turbo-equipos', 'turbo-regalos', 'voz', 'honor', 'narrador', 'acciones']) {
+    assert.match(html, new RegExp(`data-tab="${unit}"`));
+  }
+  assert.match(html, /addEventListener\('motor-state'/);
+});
+
+test('overlay displays package.json version and uses it in deployment signature', async () => {
+  const server = createServer((req, res) => void handle(req, res));
+  server.listen(0, '127.0.0.1');
+  await new Promise(resolve => server.once('listening', resolve));
+  const baseUrl = `http://127.0.0.1:${server.address().port}`;
+
+  try {
+    const packageVersion = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version;
+    const pageResponse = await fetch(`${baseUrl}/`);
+    const page = await pageResponse.text();
+    assert.match(page, new RegExp(`aria-label="Versión ${packageVersion}">v${packageVersion}`));
+
+    const source = readFileSync(new URL('./overlay.html', import.meta.url), 'utf8')
+      .replaceAll('__TORTUWORLD_PACKAGE_VERSION__', packageVersion);
+    const expectedSignature = `sha256-${createHash('sha256').update(source).digest('hex').slice(0, 16)}`;
+    const signatureResponse = await fetch(`${baseUrl}/api/deployment-signature`);
+    const { signature } = await signatureResponse.json();
+    assert.equal(pageResponse.headers.get('x-cluss-deployment-signature'), expectedSignature);
+    assert.equal(signature, expectedSignature);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+});
+
 test('TikTok events are normalized to the six allowed types without forwarding bot', () => {
   const entry = normalizeTikTokEvent('chat', {
     user: { uniqueId: 'fan1', profilePictureUrl: 'https://example.test/avatar.jpg' },
@@ -148,24 +259,65 @@ test('TikTok events are normalized to the six allowed types without forwarding b
   })?.giftDiamonds, 1);
 });
 
-test('repeated likes from one user pass event dedupe and contribute to live stats and taps', () => {
+test('raw TikTok likes pass the frontend statistics and per-team tap counter', () => {
   const browser = { window: {} };
   runInNewContext(readFileSync(new URL('./public/activity-policy.js', import.meta.url), 'utf8'), browser);
   const policy = browser.window.TORTUWORLD_ACTIVITY_POLICY;
+  const html = readFileSync(new URL('./overlay.html', import.meta.url), 'utf8');
+  const entryHandler = html.match(/function handleLiveEntry\(entry\)\{[\s\S]*?\n\}(?=\n\/\* Pinta el estado de conexion)/)?.[0];
+  const tapHandler = html.match(/function heartAdd\(t,n\)\{[\s\S]*?\n\}/)?.[0];
+  const statisticsHandler = html.match(/const _hleSt=handleLiveEntry;\nhandleLiveEntry=function\(e\)\{[\s\S]*?\n\};(?=\n\/\* ===== MEDICIÓN DE ACTIVIDAD)/)?.[0];
+  assert.ok(entryHandler);
+  assert.ok(tapHandler);
+  assert.ok(statisticsHandler);
+
+  const context = {
+    window: { TORTUWORLD_ACTIVITY_POLICY: policy },
+    document: { querySelector: () => null },
+    console,
+    Date,
+    setTimeout,
+    clearTimeout
+  };
+  runInNewContext(`
+    const TAP_POLICY = window.TORTUWORLD_ACTIVITY_POLICY;
+    const T = [{id:'team-0'}, {id:'team-1'}];
+    let HEART_N = 50;
+    const HEART_TURBO_MS = 7000, HEART_TURBO_PROGRESS = 20, HEART_TURBO_PPS = 20 / 7;
+    const heart = [0, 0];
+    const ST = {member:0, chat:0, gift:0, like:0, follow:0, share:0};
+    const teamStatistics = [0, 0], activations = [0, 0], lastChat = new Map(), picks = new Map();
+    let sel = 0, over = false, lead = -1, lastInteractionAt = 0, matchInteractionCount = 0;
+    const heartElement = {classList:{remove(){},add(){}}, offsetWidth:0};
+    const $ = () => heartElement, tapStep = () => {}, renderHeart = () => {}, tapPop = () => {};
+    const update = () => 0, turboOn = team => { activations[team]++ }, float = () => {}, hype = () => {}, A = {sfx(){}};
+    const recentChatTeam = () => -1, trackTournamentMentions = () => false, trackLaneInteraction = () => {};
+    const push = () => {}, stUser = () => {}, saveTournamentProgress = () => {}, logStat = () => {}, stFmt = String;
+    const DUELO = [];
+    window.addTeamEventTotal = (team, count) => { if(Number.isInteger(team)) teamStatistics[team] += count };
+    window.resolveSupportTeamFor = username => username === 'fan1' ? 0 : 1;
+    ${tapHandler}
+    window.recordLiveTap=(team,count)=>heartAdd(team,count);
+    ${entryHandler}
+    ${statisticsHandler}
+    globalThis.processEvent = entry => handleLiveEntry(entry);
+    globalThis.snapshot = () => ({heart, teamStatistics, activations, liveStatistics:ST});
+  `, context);
+
   const events = [
     { id: 'user-id-42', user: { uniqueId: 'fan1' }, likeCount: 3 },
-    { id: 'user-id-42', user: { uniqueId: 'fan1' }, likeCount: 2 }
+    { id: 'user-id-42', user: { uniqueId: 'fan1' }, likeCount: 2 },
+    { id: 'user-id-73', user: { uniqueId: 'fan2' }, likeCount: 4 },
+    { id: 'user-id-42', user: { uniqueId: 'fan1' }, likeCount: 45 }
   ];
-  const entries = events
-    .filter(event => !dedupeEvent(event, 'like'))
-    .map(event => normalizeTikTokEvent('like', event));
-
-  assert.equal(entries.length, 2);
-  assert.deepEqual(entries.map(entry => entry.username), ['fan1', 'fan1']);
-  assert.deepEqual(entries.map(entry => entry.activityCount), [3, 2]);
-  assert.equal(entries.reduce((total, entry) => total + policy.eventCountDelta(entry.type, entry.activityCount), 0), 5);
-  assert.equal(entries.reduce((total, entry) => total + policy.statEventDelta(entry.type, entry.activityCount), 0), 5);
-  assert.equal(entries.reduce((total, entry) => total + policy.tapEventDelta(entry.type, entry.activityCount), 0), 5);
+  events.forEach(event => {
+    if (!dedupeEvent(event, 'like')) context.processEvent(normalizeTikTokEvent('like', event));
+  });
+  const result = JSON.parse(JSON.stringify(context.snapshot()));
+  assert.deepEqual(result.heart, [0, 4]);
+  assert.deepEqual(result.activations, [1, 0]);
+  assert.deepEqual(result.teamStatistics, [50, 4]);
+  assert.equal(result.liveStatistics.like, 54);
   assert.equal(dedupeEvent({ msgId: 'like-event-1' }, 'like'), false);
   assert.equal(dedupeEvent({ msgId: 'like-event-1' }, 'like'), true);
 });

@@ -618,7 +618,9 @@ body{margin:0;background:var(--page);font-family:Inter,system-ui,sans-serif;colo
 #stp{position:absolute;inset:0;z-index:30;background:#1b120a;color:#f3ece1;padding:10px;display:flex;flex-direction:column;gap:8px;font:12px/1.4 Inter,sans-serif}
 #stp[hidden]{display:none}
 #stp header{display:flex;justify-content:space-between;align-items:center;font-size:14px}
-#stp nav{display:flex;gap:6px}
+#stp nav{display:flex;gap:6px;overflow-x:auto;flex:none;scrollbar-width:none;overscroll-behavior-x:contain}
+#stp nav::-webkit-scrollbar{display:none}
+#stp nav button{flex:none;padding:5px 8px}
 #stp button{font:700 11px Inter,sans-serif;color:#f3ece1;background:#3f2713;border:1px solid #6e4524;border-radius:999px;padding:5px 10px;cursor:pointer}
 #stp button.on{background:#e8761e;border-color:#e8761e}
 #stp .stb{flex:1;min-height:0;overflow:auto} /* min-height:0 deja que el contenido haga scroll en vez de empujar fuera lo demas */
@@ -805,14 +807,14 @@ document.addEventListener('visibilitychange',function(){if(document.hidden)flush
 <div class="win" id="win" role="alertdialog" aria-label="Ganador"></div>
 </section>
 <!-- Herramientas visibles: estado de conexión, ajuste del límite de taps y recarga. -->
-<div class="foot"><span class="live connecting" id="connection" role="status" aria-live="polite">conectando</span><button class="sm" id="bTurboDn" type="button" aria-label="Bajar el límite de taps del turbo en 10" title="Turbo: 10 taps menos">➖</button><button class="sm" id="bTurboUp" type="button" aria-label="Subir el límite de taps del turbo en 10" title="Turbo: 10 taps más">➕</button><button class="sm" id="bRefresh" type="button" aria-label="Refrescar página" title="Refrescar página">🔄</button><button class="sm" id="bBackend" type="button" aria-label="Abrir herramientas del backend" title="Herramientas del backend">⚙️</button></div>
+<div class="foot"><span class="live connecting" id="connection" role="status" aria-live="polite">conectando</span><button class="sm" id="bTurboDn" type="button" aria-label="Bajar el límite de taps del turbo en 10" title="Turbo: 10 taps menos">➖</button><button class="sm" id="bTurboUp" type="button" aria-label="Subir el límite de taps del turbo en 10" title="Turbo: 10 taps más">➕</button><button class="sm" id="bRefresh" type="button" aria-label="Refrescar página" title="Refrescar página">🔄</button><button class="sm" id="bMonitor" type="button" aria-label="Abrir monitor por unidad de negocio" title="Monitor por unidad de negocio">📊</button><button class="sm" id="bBackend" type="button" aria-label="Abrir herramientas del backend" title="Herramientas del backend">⚙️</button></div>
 <!-- FRANJA DE ESTADISTICAS del live: solo eventos REALES (los bots y los toques manuales no cuentan). -->
 <div class="evs" id="evs" role="status" aria-label="Estadisticas del live"><div class="st" data-k="member" title="Unidos"><b>👥</b><span>0</span></div><div class="st" data-k="chat" title="Comentarios"><b>💬</b><span>0</span></div><div class="st" data-k="like" title="Me gusta"><b>❤️</b><span>0</span></div><div class="st" data-k="follow" title="Seguidores nuevos"><b>➕</b><span>0</span></div><div class="st" data-k="share" title="Compartidos"><b>↗️</b><span>0</span></div></div>
 <div class="gift-total st" data-k="gift" role="status" aria-label="Regalos recibidos en esta sesión" title="Cantidad de regalos recibidos en esta sesión"><b>🎁 Regalos</b><span>0</span></div>
 <div id="toast" role="status" aria-live="polite"></div>
-<!-- PANEL DE ESTADISTICAS (📊/🌎): contiene nombres y comentarios reales; cerrarlo antes de mostrar pantalla -->
-<section id="stp" hidden role="dialog" aria-label="Estadísticas"><header><b>🐢 Estadísticas</b><span><button data-reset>↺ Reiniciar copas</button> <button data-close aria-label="Cerrar">✕</button></span></header><nav><button data-tab="torneos">🏆 Torneos</button><button data-tab="paises">🌎 Clubes</button><button data-tab="usuarios">👤 Usuarios</button></nav><div class="stb"></div></section>
-<span class="overlay-version" aria-label="Versión 1">v1</span>
+<!-- Monitor de unidades de negocio. Se mantiene el panel visual existente del overlay. -->
+<section id="stp" hidden role="dialog" aria-label="Monitor por unidad de negocio"><header><b>🐢 Monitor LIVE</b><span><button data-reset>↺ Reiniciar copas</button> <button data-close aria-label="Cerrar">✕</button></span></header><nav aria-label="Unidades de negocio"><button data-tab="eventos" title="Eventos">⚡ Eventos</button><button data-tab="usuarios" title="Usuarios">👤 Usuarios</button><button data-tab="regalos" title="Regalos">🎁 Regalos</button><button data-tab="equipos" title="Equipos">🐢 Equipos</button><button data-tab="torneos" title="Torneos">🏆 Torneos</button><button data-tab="estadisticas" title="Estadísticas">📊 Estad.</button><button data-tab="motor" title="Motor tiempo real">⚙ Motor</button><button data-tab="turbo-equipos" title="Turbo contador equipos">⚡ Turbo eq.</button><button data-tab="turbo-regalos" title="Turbo regalos">🎁 Turbo reg.</button><button data-tab="voz" title="Voz en off">♫ Voz</button><button data-tab="honor" title="Cuadro de honor">🥇 Honor</button><button data-tab="narrador" title="Narrador">🎙 Narrador</button><button data-tab="acciones" title="CTAs y acciones">🛠 Acciones</button></nav><div class="stb"></div></section>
+<span class="overlay-version" aria-label="Versión __TORTUWORLD_PACKAGE_VERSION__">v__TORTUWORLD_PACKAGE_VERSION__</span>
 </main>
 <script>
 /* ############ SECCION 1: MOTOR DEL JUEGO (datos, carriles, puntos, conexion SSE, estadisticas) ############ */
@@ -1152,6 +1154,14 @@ function logStat(o){try{
 const stH=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const stFd=t=>t?new Date(t).toLocaleString():'—',stClub=x=>tournamentItem(x)?tournamentItem(x).n:String(x||'').toUpperCase(),stDuel=d=>(d||[]).map(stClub).join(' vs ')||'—',stTm=t=>new Date(t).toLocaleTimeString();
 const ST_COL=['#ef4444','#f59e0b','#10b981','#3b82f6','#8b5cf6','#ec4899','#14b8a6','#84cc16','#a8a29e'];
+function motorSnapshot(){return window.serverMotorSnapshot||(typeof window.getLiveEventSnapshot==='function'?window.getLiveEventSnapshot():null)}
+function motorTeamTable(snapshot){
+ const teams=snapshot&&Array.isArray(snapshot.teams)?snapshot.teams:[];
+ if(!teams.length)return'<p class="mut">Esperando valores del motor.</p>';
+ return'<table><tr><th>Equipo</th><th>Avance</th><th>Taps</th><th>Límite</th><th>Eventos</th><th>Turbo</th></tr>'+
+  teams.map(team=>`<tr><td>${stH(team.name)}</td><td>${(+team.progress||0).toFixed(1)}%</td><td>${Math.floor(+team.taps||0)}</td><td>${Math.floor(+team.tapLimit||0)}</td><td>${Math.floor(+team.eventTotal||0)}</td><td>${Math.ceil((+team.turboMs||0)/1000)}s / ${Math.ceil((+team.giftTurboMs||0)/1000)}s</td></tr>`).join('')+'</table>';
+}
+function voiceSnapshot(){return typeof window.getVoiceMonitorState==='function'?window.getVoiceMonitorState():null}
 function stPie(items){ /* torta en SVG puro: arcos con seno/coseno */
  const tot=items.reduce((a,x)=>a+x.v,0);if(!tot)return'<p class="mut">Todavía no hay comentarios con clubes.</p>';
  let a0=-Math.PI/2;const R=90;
@@ -1160,17 +1170,41 @@ function stPie(items){ /* torta en SVG puro: arcos con seno/coseno */
   a0=a1;return`<path d="${d}" fill="${ST_COL[i%9]}"><title>${stH(x.l)}: ${x.v}</title></path>`}).join('')+'</svg>';
 }
 const ST_VIEWS={
+ eventos(){const items=window.liveEventMonitor?window.liveEventMonitor.events.filter(item=>item.type==='update').slice(0,15):[];
+  return'<p><b>Eventos reales recibidos</b></p><table><tr><th>Hora</th><th>Tipo</th><th>Usuario</th><th>Detalle</th></tr>'+
+   (items.length?items.map(item=>{const e=item.payload&&item.payload.entry||{};return`<tr><td>${stH(item.time)}</td><td>${stH(e.type)}</td><td>${stH(e.username)}</td><td>${stH(e.giftName||e.content||e.activityCount||'')}</td></tr>`}).join(''):'<tr><td colspan="4" class="mut">Esperando eventos LIVE.</td></tr>')+'</table>'},
  torneos(){const t=[...DB.tournaments].reverse();
   return t.length?t.map(x=>`<p><b>${x.champion?'🏆 '+stH(stClub(x.champion)):'⏳ En curso'}</b> <span class="mut">· ${stFd(x.start)}</span></p><table><tr><th>#</th><th>Duelo</th><th>Ganó</th><th>💬</th></tr>${x.rounds.map((r,i)=>`<tr><td>${i+1}</td><td>${stDuel(r.duel)}</td><td>${stH(stClub(r.winner))}</td><td>${r.chatMessages}</td></tr>`).join('')}</table>`).join(''):'<p class="mut">Aún no se guardó ningún torneo.</p>'},
- paises(){const c=Object.values(DB.countries).map(v=>({flag:v.flag,name:v.name,mentions:v.mentions,users:v.users.length})).sort((a,b)=>b.mentions-a.mentions);
+ regalos(){const gifts=[...DB.gifts].reverse().slice(0,12);
+  return`<p><b>Regalos de esta sesión:</b> ${ST.gift||0}</p><p><b>Turbo configurado:</b> ${motorSnapshot()?.turbo?.giftProgress??'—'}% · activo por equipo: ${(motorSnapshot()?.teams||[]).map(t=>stH(t.name)+' '+Math.ceil((+t.giftTurboMs||0)/1000)+'s').join(' · ')||'—'}</p>`+
+   (gifts.length?'<table><tr><th>Ronda</th><th>Regalos</th><th>Usuarios</th></tr>'+gifts.map(item=>`<tr><td>${stH(item.id)}</td><td>${item.gifts||0}</td><td>${item.users||0}</td></tr>`).join('')+'</table>':'<p class="mut">Todavía no hay rondas con regalos.</p>')},
+ equipos(){return motorTeamTable(motorSnapshot())},
+ estadisticas(){const c=Object.values(DB.countries).map(v=>({flag:v.flag,name:v.name,mentions:v.mentions,users:v.users.length})).sort((a,b)=>b.mentions-a.mentions);
   const items=c.slice(0,8).map(x=>({l:x.flag+' '+x.name,v:x.mentions})),rest=c.slice(8).reduce((a,x)=>a+x.mentions,0);if(rest)items.push({l:'Otros',v:rest});
-  return stPie(items)+(c.length?`<table><tr><th></th><th>Club</th><th>Menciones</th><th>Personas</th></tr>${c.map((x,i)=>`<tr><td style="color:${ST_COL[Math.min(i,8)]}">●</td><td>${x.flag} ${stH(x.name)}</td><td>${x.mentions}</td><td>${x.users}</td></tr>`).join('')}</table><p class="mut">Cada comentario que nombra un club suma 1.</p>`:'')},
+  return'<p><b>Eventos</b> · '+Object.entries(ST).map(([type,count])=>stH(type)+': '+count).join(' · ')+'</p>'+stPie(items)+(c.length?`<table><tr><th></th><th>Club</th><th>Menciones</th><th>Personas</th></tr>${c.map((x,i)=>`<tr><td style="color:${ST_COL[Math.min(i,8)]}">●</td><td>${x.flag} ${stH(x.name)}</td><td>${x.mentions}</td><td>${x.users}</td></tr>`).join('')}</table><p class="mut">Cada comentario que nombra un club suma 1.</p>`:'')},
+ motor(){const m=motorSnapshot();if(!m)return'<p class="mut">Esperando una muestra del motor.</p>';
+  const sec=Math.floor((+m.elapsedMs||0)/1000);
+  return`<p><b>Estado:</b> ${stH(m.phase||'—')} · <b>Tiempo:</b> ${Math.floor(sec/60)}:${String(sec%60).padStart(2,'0')} · <b>Inactividad:</b> ${Math.floor(+m.idleSeconds||0)} s · <b>Ganador:</b> ${stH(m.winner||'—')}</p><p class="mut">${window.serverMotorSnapshot?'Snapshot retransmitido por el backend.':'Esperando retransmisión del backend; se muestra el snapshot local.'}</p>`+
+   motorTeamTable(m)+'<pre>'+stH(JSON.stringify(m.stats||{},null,2))+'</pre>'},
+ 'turbo-equipos'(){const m=motorSnapshot(),cfg=m&&m.turbo||{},teams=m&&m.teams||[];
+  return`<p><b>Límite actual:</b> ${teams.map(t=>stH(t.name)+' '+Math.floor(+t.taps||0)+' / '+Math.floor(+t.tapLimit||0)).join(' · ')||'—'}</p><p><b>Turbo de taps:</b> ${cfg.tapProgress??'—'}% por ${cfg.tapDurationMs?Math.round(cfg.tapDurationMs/1000)+'s':'—'}</p><p class="mut">El límite crece según el avance de la carrera. Los controles existentes siguen disponibles:</p><button data-action="turbo-down">➖ Bajar límite</button> <button data-action="turbo-up">➕ Subir límite</button>`},
+ 'turbo-regalos'(){const m=motorSnapshot(),cfg=m&&m.turbo||{};
+  return`<p><b>Avance configurado:</b> ${cfg.giftProgress??'—'}%</p><p><b>Duración configurada:</b> ${cfg.giftDurationMs?Math.round(cfg.giftDurationMs/1000)+'s':'—'}</p>${motorTeamTable(m)}`},
  usuarios(){const IC={chat:'💬',like:'❤️',follow:'➕',share:'↗️',member:'👋'},NM={chat:'comentó',like:'likes',follow:'siguió',share:'compartió',member:'se unió'};
   const l=Object.values(DB.users).sort((a,b)=>b.last-a.last);
-  return l.length?l.map(u=>{const t=picks.get(u.name.toLowerCase()),events=u.ev.filter(event=>event.type!=='gift');return`<details data-u="${stH(u.name.toLowerCase())}"><summary><b>${stH(u.name)}</b> <span class="mut">${t!=null&&T[t]?T[t].n+' · ':''}${events.length} eventos · ${stTm(u.last)}</span></summary><div class="ue"></div></details>`}).join(''):'<p class="mut">Todavía no hay usuarios registrados.</p>'}
+  return l.length?l.map(u=>{const t=picks.get(u.name.toLowerCase()),events=u.ev.filter(event=>event.type!=='gift');return`<details data-u="${stH(u.name.toLowerCase())}"><summary><b>${stH(u.name)}</b> <span class="mut">${t!=null&&T[t]?T[t].n+' · ':''}${events.length} eventos · ${stTm(u.last)}</span></summary><div class="ue"></div></details>`}).join(''):'<p class="mut">Todavía no hay usuarios registrados.</p>'},
+ voz(){const v=voiceSnapshot();return v&&v.levels?'<table><tr><th>Nivel</th><th>Prioridad</th><th>Interrumpe</th></tr>'+v.levels.map(x=>`<tr><td>${stH(x.id)}</td><td>${x.priority}</td><td>${x.interrupt?'Sí':'No'}</td></tr>`).join('')+'</table><p class="mut">Meta de narración: '+v.trackMeters+' m · Voz '+(v.enabled?'activa':'silenciada')+'</p>':'<p class="mut">Cargando prioridades de voz.</p>'},
+ honor(){const p=window.P||{},cups=p.cp||{},winners=Object.entries(cups).filter(([,count])=>Number(count)>0).sort((a,b)=>b[1]-a[1]);
+  return'<p><b>Victorias de la serie:</b> '+(p.wins||[]).map((count,index)=>stH(T[index]?.n||'Equipo '+(index+1))+': '+(count||0)).join(' · ')+'</p><table><tr><th>Equipo</th><th>Copas</th></tr>'+(winners.length?winners.map(([id,count])=>`<tr><td>${stH(stClub(id))}</td><td>${count}</td></tr>`).join(''):'<tr><td colspan="2" class="mut">Todavía no hay copas.</td></tr>')+'</table>'+ST_VIEWS.torneos()},
+ narrador(){const v=voiceSnapshot(),bub=document.getElementById('bub');
+  return'<p><b>Relato visible:</b> '+stH(bub&&bub.textContent||'—')+'</p><p><b>Frase actual:</b> '+stH(v&&v.current||'Silencio')+'</p>'+
+   (v&&v.queue&&v.queue.length?'<table><tr><th>Cola</th><th>Prioridad</th><th>Texto</th></tr>'+v.queue.map(x=>`<tr><td>${stH(x.id)}</td><td>${x.priority}</td><td>${stH(x.text)}</td></tr>`).join('')+'</table>':'<p class="mut">No hay mensajes pendientes.</p>')},
+ acciones(){return'<p class="mut">Acciones del overlay</p><button data-action="reset-race">🏁 Reiniciar carrera</button> <button data-action="reset-cups">↺ Reiniciar copas</button><p><button data-action="turbo-down">➖ Turbo −</button> <button data-action="turbo-up">➕ Turbo +</button> <button data-action="refresh">🔄 Recargar</button> <button data-action="backend">⚙ Backend</button></p>'}
 };
 /* Panel de estadisticas: cambia de pestana y redibuja su contenido. */
-function stTab(t){const p=document.getElementById('stp');p.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));p.querySelector('.stb').innerHTML=ST_VIEWS[t]()}
+let stActiveTab='eventos';
+function stTab(t){const p=document.getElementById('stp');if(!ST_VIEWS[t])return;stActiveTab=t;p.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));p.querySelector('.stb').innerHTML=ST_VIEWS[t]()}
+setInterval(()=>{const p=document.getElementById('stp');if(!p.hidden&&stActiveTab==='motor')stTab('motor')},1000);
 let stCloseTimer=0;
 /* Panel de estadisticas: lo cierra. */
 function stClose(){clearTimeout(stCloseTimer);stCloseTimer=0;document.getElementById('stp').hidden=true}
@@ -1183,6 +1217,14 @@ document.addEventListener('click',e=>{ /* eventos del panel (delegados) */
  const p=document.getElementById('stp');if(!p||p.hidden||!p.contains(e.target))return;
  const b=e.target.closest('button');if(!b)return;
  if(b.dataset.tab)stTab(b.dataset.tab);
+ else if(b.dataset.action){
+  if(b.dataset.action==='turbo-down')document.getElementById('bTurboDn').click();
+  else if(b.dataset.action==='turbo-up')document.getElementById('bTurboUp').click();
+  else if(b.dataset.action==='reset-race')window.tortugas.reset();
+  else if(b.dataset.action==='reset-cups')p.querySelector('[data-reset]').click();
+  else if(b.dataset.action==='refresh')document.getElementById('bRefresh').click();
+  else if(b.dataset.action==='backend')document.getElementById('bBackend').click();
+ }
  else if('close' in b.dataset)stClose();
  else if('reset' in b.dataset){ /* doble toque para evitar reinicios por error */
   if(!b.dataset.sure){b.dataset.sure=1;b.textContent='Confirmación pendiente';setTimeout(()=>{delete b.dataset.sure;b.textContent='↺ Reiniciar copas'},4000)}
@@ -1600,6 +1642,7 @@ window.liveEventMonitor={
 const source=new EventSource('/api/events');
 source.addEventListener('status',event=>{const payload=JSON.parse(event.data);setConnection(payload);recordReceivedEvent('status',payload)});
 source.addEventListener('update',event=>window.liveEventMonitor.receive(JSON.parse(event.data)));
+source.addEventListener('motor-state',event=>{window.serverMotorSnapshot=JSON.parse(event.data)});
 source.onerror=()=>{const status={connected:false,status:'reconnecting'};setConnection(status);recordReceivedEvent('connection',status)};
 fetch('/api/reconnect',{method:'POST'}).then(async response=>{
  if(!response.ok&&response.status!==409){
@@ -2149,8 +2192,27 @@ const ST={member:0,chat:0,gift:0,like:0,follow:0,share:0};
 const teamEventTotals=new Map();
 window.getLiveEventSnapshot=()=>({
  stats:{...ST},
- taps:T.map((team,index)=>({team:team.n,value:heart[index],limit:HEART_N}))
+ phase:over?'finished':raceReady?'running':'starting',
+ elapsedMs:window.getRaceElapsedMs(),
+ idleSeconds:Math.max(0,Math.ceil((idleLimitMs()-(Date.now()-lastInteractionAt))/1000)),
+ winner:over&&lead>=0?T[lead].n:'',
+ turbo:{tapProgress:HEART_TURBO_PROGRESS,tapDurationMs:HEART_TURBO_MS,giftProgress:GIFT_TURBO_PROGRESS,giftDurationMs:GIFT_TURBO_MS},
+ teams:T.map((team,index)=>({
+  id:team.id,name:team.n,progress:Math.min(100,S[index].p),taps:heart[index],tapLimit:HEART_N,
+  eventTotal:teamEventTotals.get(team.id)||0,
+  turboMs:Math.max(0,turbo[index]-performance.now()),
+  giftTurboMs:Math.max(0,giftTurboUntil[index]-performance.now())
+ }))
 });
+let motorPostBusy=false,motorLastSent=0,motorLastError=0;
+setInterval(()=>{
+ if(motorPostBusy||Date.now()-motorLastSent<500)return;
+ motorPostBusy=true;
+ fetch('/api/motor/telemetry',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(window.getLiveEventSnapshot())})
+  .then(response=>{if(!response.ok)throw new Error('No se pudo publicar la telemetría del motor ('+response.status+').');motorLastSent=Date.now()})
+  .catch(error=>{if(Date.now()-motorLastError>10000){console.error(error);motorLastError=Date.now()}})
+  .finally(()=>{motorPostBusy=false});
+},250);
 const idleStat=document.createElement('div');
 idleStat.className='st';idleStat.dataset.k='idle';idleStat.title='Tiempo restante sin interacción';
 idleStat.innerHTML='<b>⏳</b><span id="idleCountdown" aria-live="off">60s</span>';
@@ -2209,6 +2271,7 @@ function renderInactivityCountdown(now=Date.now()){
 }
 $('#bRefresh').onclick=()=>location.reload();
 $('#bBackend').onclick=()=>{location.href='/backend'};
+$('#bMonitor').onclick=()=>{const panel=$('#stp');panel.hidden=false;stTab('eventos')};
 
 /* ===== PREMIOS POR ACCIONES DE ESPECTADORES ===== */
 const us=new Map(),joined=new Set(),welcomed=new Set(),turbo=[0,0,0],turboPower=[0,0,0],giftTurboUntil=[0,0,0];let lastMvp=null,hyT;window.__gamiTurbo={turbo:turbo,giftTurboUntil:giftTurboUntil};
@@ -5072,6 +5135,7 @@ const TRACK=()=>+TB.trackMeters||100;
 const fill=(s,o)=>String(s||'').replace(/\{(\w+)\}/g,(_,k)=>o[k]==null?'':o[k]);
 /* 3) Voz y cola */
 const Q=[];let cur=null,lastEv=0,lastMatch=0,primed=false;
+window.getVoiceMonitorState=()=>({enabled:!mute(),trackMeters:TRACK(),current:cur?cur.text:'',queue:Q.map(item=>({id:item.id,priority:item.p,text:item.text})),levels:TB.levels.map(level=>({id:level.id,priority:level.priority,interrupt:!!level.interrupt}))});
 const mute=()=>safe(()=>P.vo)===0||safe(()=>P.vo)===false;
 const pickVoice=()=>{const v=SS.getVoices?SS.getVoices():[];const es=v.filter(x=>/^es/i.test(x.lang));return es.find(x=>/google/i.test(x.name))||es.find(x=>/es-(US|MX|419)/i.test(x.lang))||es[0]||null};
 function purge(){const n=Date.now();for(let i=Q.length-1;i>=0;i--)if(Q[i].ttl>0&&n-Q[i].at>Q[i].ttl)Q.splice(i,1)}

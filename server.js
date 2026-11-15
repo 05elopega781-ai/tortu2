@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { createServer } from 'node:http';
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { appendFile, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, extname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import voicePriority from './server/voice-priority.js';
@@ -10,7 +10,8 @@ import voicePriority from './server/voice-priority.js';
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = resolve(ROOT, process.env.DATA_DIR || 'data');
 const PUBLIC_DIR = resolve(ROOT, 'public');
-const HTML_FILE = resolve(ROOT, 'v21_voz_saludos_backend.html');
+const HTML_FILE = resolve(ROOT, 'overlay.html');
+const PACKAGE_VERSION = JSON.parse(readFileSync(resolve(ROOT, 'package.json'), 'utf8')).version;
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
 const MAX_BODY = 600 * 1024;
@@ -45,6 +46,7 @@ const ALLOWED_STATE_KEY = /^cluss\.(?:v1|torneoLock|lang|crest\.[\w-]+|vs|fans|s
 
 const clients = new Set();
 const toolClients = new Set();
+const motorClients = new Set();
 const heartbeats = new Map();
 const adminSessions = new Map();
 const recentUsers = [];
@@ -73,6 +75,7 @@ let settings = {
   countryStats: Object.fromEntries([...COUNTRIES.map(country => country.code), 'sin-pais'].map(code => [code, { comments: 0, cups: 0 }]))
 };
 let overlayActive = false;
+let motorTelemetry = null;
 
 function normalizeUsername(value) {
   return String(value || '').trim().replace(/@/g, '').replace(/\s+/g, '');
@@ -199,6 +202,65 @@ function broadcastSse(pool, event, data) {
 
 function broadcastTool(event, data) {
   broadcastSse(toolClients, event, data);
+}
+
+function normalizeMotorTelemetry(value) {
+  const phases = new Set(['starting', 'running', 'finished', 'waiting']);
+  const types = ['member', 'chat', 'gift', 'like', 'follow', 'share'];
+  if (!value || typeof value !== 'object' || !phases.has(value.phase) || !Array.isArray(value.teams) || value.teams.length !== 2) {
+    return null;
+  }
+  const teams = value.teams.map(team => {
+    if (!team || typeof team.id !== 'string' || typeof team.name !== 'string') return null;
+    const number = (input, max) => {
+      const result = Number(input);
+      return Number.isFinite(result) ? Math.min(max, Math.max(0, result)) : null;
+    };
+    const progress = number(team.progress, 100);
+    const taps = number(team.taps, 1000000);
+    const tapLimit = number(team.tapLimit, 100);
+    const eventTotal = number(team.eventTotal, 100000000);
+    const turboMs = number(team.turboMs, 60000);
+    const giftTurboMs = number(team.giftTurboMs, 60000);
+    if ([progress, taps, tapLimit, eventTotal, turboMs, giftTurboMs].some(item => item === null) || tapLimit < 1) return null;
+    return {
+      id: team.id.slice(0, 40),
+      name: team.name.slice(0, 80),
+      progress,
+      taps,
+      tapLimit,
+      eventTotal,
+      turboMs,
+      giftTurboMs
+    };
+  });
+  if (teams.some(team => team === null)) return null;
+  const stats = {};
+  for (const type of types) {
+    const count = Number(value.stats?.[type]);
+    stats[type] = Number.isFinite(count) ? Math.min(100000000, Math.max(0, Math.floor(count))) : 0;
+  }
+  const elapsedMs = Number(value.elapsedMs);
+  const idleSeconds = Number(value.idleSeconds);
+  const turboValue = (input, max) => {
+    const result = Number(input);
+    return Number.isFinite(result) ? Math.min(max, Math.max(0, result)) : 0;
+  };
+  return {
+    updatedAt: Date.now(),
+    phase: value.phase,
+    elapsedMs: Number.isFinite(elapsedMs) ? Math.min(86400000, Math.max(0, elapsedMs)) : 0,
+    idleSeconds: Number.isFinite(idleSeconds) ? Math.min(86400, Math.max(0, idleSeconds)) : 0,
+    winner: typeof value.winner === 'string' ? value.winner.slice(0, 80) : '',
+    stats,
+    teams,
+    turbo: {
+      tapProgress: turboValue(value.turbo?.tapProgress, 100),
+      tapDurationMs: turboValue(value.turbo?.tapDurationMs, 60000),
+      giftProgress: turboValue(value.turbo?.giftProgress, 100),
+      giftDurationMs: turboValue(value.turbo?.giftDurationMs, 60000)
+    }
+  };
 }
 
 async function loadJson(path, fallback) {
@@ -675,12 +737,19 @@ function contentType(path) {
   })[extname(path)] || 'application/octet-stream';
 }
 
+  function deploymentSignature(body) {
+    const html = body.toString('utf8').replaceAll('__TORTUWORLD_PACKAGE_VERSION__', PACKAGE_VERSION);
+    return `sha256-${createHash('sha256').update(html).digest('hex').slice(0, 16)}`;
+  }
+
 async function serveFile(req, res, path, options = {}) {
   try {
     let body = await readFile(path);
     if (options.deploymentSignature) {
-      const signature = `sha256-${createHash('sha256').update(body).digest('hex').slice(0, 16)}`;
-      body = Buffer.from(body.toString('utf8').replaceAll('__CLUSS_DEPLOYMENT_SIGNATURE__', signature));
+        const signature = deploymentSignature(body);
+        body = Buffer.from(body.toString('utf8')
+          .replaceAll('__TORTUWORLD_PACKAGE_VERSION__', PACKAGE_VERSION)
+          .replaceAll('__CLUSS_DEPLOYMENT_SIGNATURE__', signature));
       res.setHeader('x-cluss-deployment-signature', signature);
     }
     res.writeHead(200, {
@@ -709,62 +778,107 @@ input{border:1px solid #31435a;background:#0a1220;color:var(--text);padding:.65r
 .hero{padding:42px 0 22px;display:grid;grid-template-columns:1.35fr .85fr;gap:36px;align-items:end}.eyebrow{color:var(--cyan);font-size:10px;font-weight:800;letter-spacing:.2em;text-transform:uppercase}.hero h1{font-size:clamp(34px,5vw,56px);line-height:1.03;letter-spacing:-.05em;margin:12px 0}.hero h1 em{font-style:normal;color:var(--lime)}.hero p{color:var(--muted);max-width:570px;margin:0}.hero-actions{display:flex;gap:10px;align-items:center;margin-top:22px}.hero-actions a{color:var(--cyan);text-decoration:none;font-weight:700;padding:10px 12px}
 .connection-card,.panel,.stat{border:1px solid var(--line);border-radius:15px;background:linear-gradient(145deg,#142033,#0f1725);box-shadow:0 16px 40px #0002}.connection-card{padding:18px}.connection-card header,.panel header{display:flex;align-items:center;justify-content:space-between;gap:12px}.connection-card h2,.panel h2{margin:0;font-size:14px;letter-spacing:.02em}.status-pill{color:var(--amber);font-size:11px;font-weight:800}.status-pill.online{color:var(--lime)}.subtle{font-size:12px;color:var(--muted)}
 .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:18px 0 14px}.stat{padding:15px 17px}.stat-label{display:block;color:var(--muted);font-size:10px;font-weight:750;letter-spacing:.12em;text-transform:uppercase}.stat strong{display:block;font-size:22px;margin-top:7px;letter-spacing:-.03em}.stat small{color:var(--muted)}
+.unit-nav{display:flex;gap:8px;overflow-x:auto;padding:7px 2px 14px;margin:4px 0 8px;scrollbar-width:thin}.unit-nav button{flex:0 0 auto;padding:.58rem .85rem;font-size:12px}.unit-nav button.active{border-color:var(--cyan);background:#173449;color:#fff;box-shadow:0 0 0 2px #62e6ff18}
 .layout{display:grid;grid-template-columns:1.2fr .8fr;gap:14px}.panel{padding:19px;margin-bottom:14px}.panel header{margin-bottom:16px}.panel h2{display:flex;align-items:center;gap:9px}.icon{width:30px;height:30px;border-radius:9px;display:inline-grid;place-items:center;background:#1b3341;color:var(--cyan)}
 .voice-panel{border-color:#355654;background:linear-gradient(140deg,#13231f,#101827)}.voice-order{list-style:none;padding:0;margin:15px 0 0;display:grid;gap:9px}.voice-card{display:grid;grid-template-columns:39px 1fr auto;gap:12px;align-items:start;padding:13px;border:1px solid #294237;border-radius:11px;background:#0d191b}.voice-rank{width:34px;height:34px;display:grid;place-items:center;border-radius:10px;color:#0a1a1b;background:var(--lime);font-weight:950}.voice-copy b{font-size:13px}.voice-copy p{margin:3px 0;color:var(--muted);font-size:12px}.voice-copy small{display:block;color:#a8c0bd;overflow-wrap:anywhere;font-size:11px}.voice-level{color:#8da69e;font-size:9px;letter-spacing:.08em;font-weight:800}.voice-hint{margin:12px 0 0;padding:10px 12px;background:#152b24;border-radius:9px;color:#c4e7c4;font-size:12px}
-.form-row{display:flex;flex-wrap:wrap;gap:10px;align-items:end}.field{display:grid;gap:5px;color:var(--muted);font-size:11px}.field input{width:130px}.field.token{min-width:min(100%,340px);flex:1}.field.token input{width:100%}.toolbar{display:flex;flex-wrap:wrap;gap:8px;margin-top:15px}.toolbar p{display:flex;gap:8px;margin:0;flex-wrap:wrap}.checkrow{display:flex;align-items:center;gap:9px;color:#c9d6e5}.checkrow input{accent-color:var(--lime)}.message{min-height:24px;color:var(--cyan);font-size:12px;margin:14px 0 0}.pre{padding:11px;border:1px solid #25374a;border-radius:9px;background:#0a111c;color:#b9c9dc;white-space:pre-wrap;overflow-wrap:anywhere;font:11px/1.5 ui-monospace,Consolas,monospace;max-height:230px;overflow:auto}.country-box{margin-top:12px}.server-footer{display:flex;justify-content:space-between;gap:12px;color:#657b94;font-size:10px;padding:18px 0}
+.form-row{display:flex;flex-wrap:wrap;gap:10px;align-items:end}.field{display:grid;gap:5px;color:var(--muted);font-size:11px}.field input{width:130px}.field.token{min-width:min(100%,340px);flex:1}.field.token input{width:100%}.toolbar{display:flex;flex-wrap:wrap;gap:8px;margin-top:15px}.toolbar p{display:flex;gap:8px;margin:0;flex-wrap:wrap}.checkrow{display:flex;align-items:center;gap:9px;color:#c9d6e5}.checkrow input{accent-color:var(--lime)}.message{min-height:24px;color:var(--cyan);font-size:12px;margin:14px 0 0}.pre{padding:11px;border:1px solid #25374a;border-radius:9px;background:#0a111c;color:#b9c9dc;white-space:pre-wrap;overflow-wrap:anywhere;font:11px/1.5 ui-monospace,Consolas,monospace;max-height:230px;overflow:auto}.country-box{margin-top:12px}.motor-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.motor-card{border:1px solid #25374a;border-radius:11px;background:#0a111c;padding:12px}.motor-card h3{margin:0 0 8px;font-size:13px}.motor-card .meter{height:8px;background:#1a2938;border-radius:8px;overflow:hidden;margin:8px 0}.motor-card .meter i{display:block;height:100%;background:linear-gradient(90deg,#62e6ff,#a4f36d)}.motor-values{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;color:var(--muted);font-size:11px}.motor-values b{color:var(--text);font-weight:700}.unit-empty{padding:14px;border:1px dashed #29465b;border-radius:10px;color:var(--muted)}.server-footer{display:flex;justify-content:space-between;gap:12px;color:#657b94;font-size:10px;padding:18px 0}
 @media(max-width:850px){.hero,.layout{grid-template-columns:1fr}.hero{gap:20px;padding-top:30px}.connection-card{max-width:none}}@media(max-width:560px){.shell{padding:0 14px 28px}.topbar{height:68px}.topmeta{gap:8px}.live-tag{font-size:9px}.hero h1{font-size:37px}.stats{gap:7px}.stat{padding:12px 10px}.stat strong{font-size:18px}.panel{padding:15px}.voice-card{grid-template-columns:34px 1fr}.voice-level{grid-column:2}.field.token{min-width:100%}}
 </style></head>
 <body><div class="shell">
 <header class="topbar"><a class="brand" href="/backend"><span class="brandmark">TW</span><span><b>TORTUWORLD</b><small>GAME SERVER · CONTROL ROOM</small></span></a><div class="topmeta"><span class="live-tag"><i class="dot"></i> LIVE OPS</span><span id="clock">--:--:--</span></div></header>
 <main>
-<section class="hero"><div><span class="eyebrow">Game operations / servidor 01</span><h1>Controla la partida.<br><em>Domina el live.</em></h1><p>Centro de mando para la conexión, el overlay, las reglas de carrera y la voz en off de TortuWorld.</p><div class="hero-actions"><a href="/">Abrir overlay ↗</a><button class="primary" id="voiceToggle" aria-controls="voicePanel" aria-expanded="false">♫ Ver protocolo de voz</button></div></div>
-<article class="connection-card"><header><h2>Conexión TikTok</h2><span class="status-pill" id="status">CONECTANDO</span></header><p class="subtle" id="statusDetail">Esperando estado del servidor…</p><form id="connect" class="form-row"><label class="field">Usuario del live<input name="username" placeholder="usuario sin @" required></label><button class="primary">Conectar</button><button type="button" id="reconnect">Reintentar</button></form></article></section>
+<section class="hero"><div><span class="eyebrow">Game operations / servidor 01</span><h1>Controla la partida.<br><em>Domina el live.</em></h1><p>Centro de mando organizado por unidades de negocio de TortuWorld.</p><div class="hero-actions"><a href="/">Abrir overlay ↗</a><button class="primary" id="voiceToggle">♫ Voz en off</button></div></div>
+<article class="connection-card" data-units="usuarios acciones"><header><h2>Conexión TikTok</h2><span class="status-pill" id="status">CONECTANDO</span></header><p class="subtle" id="statusDetail">Esperando estado del servidor…</p><form id="connect" class="form-row"><label class="field">Usuario del live<input name="username" placeholder="usuario sin @" required></label><button class="primary">Conectar</button><button type="button" id="reconnect">Reintentar</button></form></article></section>
 <section class="stats"><article class="stat"><span class="stat-label">Eventos recibidos</span><strong id="eventCount">0</strong><small>En esta sesión</small></article><article class="stat"><span class="stat-label">Regalos recibidos</span><strong id="giftCount">0</strong><small>Contador del servidor</small></article><article class="stat"><span class="stat-label">Overlay</span><strong id="overlayState">Verificando</strong><small id="overlayClients">Buscando clientes activos</small></article></section>
-<section class="panel voice-panel" id="voicePanel" hidden><header><h2><span class="icon">♫</span> Protocolo de voz en off</h2><span class="pill">PRIORIDADES EN VIVO</span></header><p class="subtle">Los números más bajos hablan primero. Un regalo interrumpe los mensajes de menor prioridad.</p><ol class="voice-order" id="voiceOrder"></ol><p class="voice-hint">🎁 Cada regalo se agradece. Desde 1 diamante suena una alerta alegre. Luego: cambios de equipo → comentarios → saludos/acciones → avance y distancia a la meta.</p><p class="message" id="voiceError" role="status"></p></section>
-<div class="layout"><div>
-<section class="panel"><header><h2><span class="icon">⚙</span> Control de partida</h2><span class="pill">GAMEPLAY</span></header><div class="form-row"><label class="field">Turbo por regalo %<input id="gift" type="number" min="0" max="100" value="6"></label><label class="field">Turbo por taps %<input id="tap" type="number" min="0" max="100" value="20"></label><button class="primary" id="save">Guardar ajustes</button></div><div class="toolbar"><button id="reset">Reiniciar cronómetro y regalos</button><p><button data-command="turbo-down">Turbo −</button><button data-command="turbo-up">Turbo +</button><button data-command="refresh">Recargar overlay</button></p></div><pre class="pre" id="tools">Esperando telemetría…</pre></section>
-<section class="panel"><header><h2><span class="icon">🏁</span> Torneo Libre</h2><span class="pill">VOTACIÓN</span></header><label class="checkrow"><input id="tournamentEnabled" type="checkbox"> Registrar votos de comentarios reales</label><div class="toolbar"><button class="primary" id="saveTournament">Guardar configuración</button></div></section>
-</div><div>
-<section class="panel"><header><h2><span class="icon">🔐</span> Sesión de operador</h2><span class="pill">ADMIN</span></header><p class="subtle">Sesión protegida por token. Se cerrará automáticamente en 12 horas.</p><button type="button" id="logout">Cerrar sesión</button></section>
-<section class="panel"><header><h2><span class="icon">🌎</span> Actividad por país</h2><span class="pill">LIVE DATA</span></header><pre class="pre" id="countries">Esperando datos…</pre><div class="country-box"><span class="subtle">Estado del overlay</span><pre class="pre" id="presence">Verificando clientes…</pre></div></section>
-</div></div><p class="message" id="message" role="status"></p>
+<nav class="unit-nav" id="businessUnits" aria-label="Unidades de negocio">
+<button class="active" data-unit="eventos">Eventos</button><button data-unit="usuarios">Usuarios</button><button data-unit="regalos">Regalos</button><button data-unit="equipos">Equipos</button><button data-unit="torneos">Torneos</button><button data-unit="estadisticas">Estadísticas</button><button data-unit="motor">Motor tiempo real</button><button data-unit="turbo-equipos">Turbo contador equipos</button><button data-unit="turbo-regalos">Turbo regalos</button><button data-unit="voz">Voz en off</button><button data-unit="honor">Cuadro de honor</button><button data-unit="narrador">Narrador</button><button data-unit="acciones">CTAs / Acciones</button>
+</nav>
+<section class="panel business-panel" data-units="eventos"><header><h2><span class="icon">⚡</span> Eventos LIVE</h2><span class="pill">FLUJO EN VIVO</span></header><p class="subtle">Eventos recibidos en esta sesión: <b id="eventUnitCount">0</b>. Los regalos y el estado de conexión también se muestran arriba.</p><pre class="pre" id="lastMotorEvent">Esperando el primer evento…</pre><pre class="pre" id="tools" hidden></pre></section>
+<section class="panel business-panel" data-units="usuarios"><header><h2><span class="icon">👤</span> Usuarios recientes</h2><span class="pill">LIVE</span></header><pre class="pre" id="recentUsers">Cargando usuarios…</pre></section>
+<section class="panel business-panel" data-units="regalos turbo-regalos"><header><h2><span class="icon">🎁</span> Regalos y turbo de regalos</h2><span class="pill">CONTROL</span></header><p class="subtle">Total recibidos: <b id="giftUnitCount">0</b></p><div class="form-row"><label class="field">Avance total del turbo por regalos (%)<input id="gift" type="number" min="0" max="100" value="6"></label><button class="primary" id="saveGiftTurbo">Guardar turbo de regalos</button></div></section>
+<section class="panel business-panel" data-units="equipos turbo-equipos"><header><h2><span class="icon">🐢</span> Equipos y turbo del contador</h2><span class="pill">MOTOR</span></header><div class="form-row"><label class="field">Avance del turbo por taps (%)<input id="tap" type="number" min="0" max="100" value="20"></label><button class="primary" id="saveTapTurbo">Guardar turbo de equipos</button><button data-command="turbo-down">Turbo −</button><button data-command="turbo-up">Turbo +</button></div><div class="motor-grid" id="teamTelemetry"><div class="unit-empty">Esperando valores del motor…</div></div></section>
+<section class="panel business-panel" data-units="motor"><header><h2><span class="icon">⚙</span> Motor en tiempo real</h2><span class="pill" id="motorStatus">SIN TELEMETRÍA</span></header><p class="subtle">Valores actuales reportados por el overlay y retransmitidos por el servidor.</p><div class="stats"><article class="stat"><span class="stat-label">Fase</span><strong id="motorPhase">—</strong><small id="motorUpdated">Esperando al overlay</small></article><article class="stat"><span class="stat-label">Duración</span><strong id="motorElapsed">—</strong><small>Tiempo de carrera</small></article><article class="stat"><span class="stat-label">Inactividad</span><strong id="motorIdle">—</strong><small>Cuenta regresiva</small></article></div><p class="subtle">Ganador: <b id="motorWinner">—</b> · Eventos procesados: <b id="motorEvents">0</b></p><div class="motor-grid" id="motorTeams"><div class="unit-empty">El overlay debe estar abierto para publicar telemetría.</div></div><pre class="pre" id="motorStats">Estadísticas del motor: esperando datos…</pre></section>
+<section class="panel business-panel" data-units="torneos"><header><h2><span class="icon">🏆</span> Torneos</h2><span class="pill">VOTACIÓN</span></header><label class="checkrow"><input id="tournamentEnabled" type="checkbox"> Registrar votos de comentarios reales</label><div class="toolbar"><button class="primary" id="saveTournament">Guardar configuración</button></div></section>
+<section class="panel business-panel" data-units="estadisticas"><header><h2><span class="icon">📊</span> Estadísticas por país y presencia</h2><span class="pill">LIVE DATA</span></header><pre class="pre" id="countries">Esperando datos…</pre><div class="country-box"><span class="subtle">Estado del overlay</span><pre class="pre" id="presence">Verificando clientes…</pre></div></section>
+<section class="panel business-panel" data-units="voz"><header><h2><span class="icon">♫</span> Voz en off</h2><span class="pill">PRIORIDADES EN VIVO</span></header><p class="subtle">Los números más bajos hablan primero. Un regalo interrumpe los mensajes de menor prioridad.</p><ol class="voice-order" id="voiceOrder"></ol><p class="voice-hint">🎁 Cada regalo se agradece. Desde 1 diamante suena una alerta alegre. Luego: cambios de equipo → comentarios → saludos/acciones → avance y distancia a la meta.</p><p class="message" id="voiceError" role="status"></p></section>
+<section class="panel business-panel" data-units="honor"><header><h2><span class="icon">🥇</span> Cuadro de honor</h2><span class="pill">TORNEOS</span></header><pre class="pre" id="honorBoard">Cargando resultados guardados…</pre></section>
+<section class="panel business-panel" data-units="narrador voz"><header><h2><span class="icon">🎙</span> Narrador</h2><span class="pill">PROTOCOLO</span></header><p class="subtle">Prioridad actual de narración y reglas de interrupción de voz.</p><ol class="voice-order" id="narratorOrder"></ol><p class="message" id="narratorError" role="status"></p></section>
+<section class="panel business-panel" data-units="acciones"><header><h2><span class="icon">🛠</span> CTAs / Acciones</h2><span class="pill">OPERADOR</span></header><p class="subtle">Herramientas de operación del live y la sesión.</p><div class="toolbar"><button id="reset">Reiniciar cronómetro y regalos</button><button data-command="refresh">Recargar overlay</button><button id="logout">Cerrar sesión protegida</button></div></section>
+<p class="message" id="message" role="status"></p>
 </main><footer class="server-footer"><span>TORTUWORLD GAME SERVER</span><span>Control local · datos en tiempo real</span></footer></div>
 <script>
 const $=s=>document.querySelector(s),headers=()=>({'content-type':'application/json'}),msg=t=>$('#message').textContent=t;
 async function admin(path,body){const r=await fetch(path,{method:'POST',headers:headers(),credentials:'same-origin',body:JSON.stringify(body||{})});const j=await r.json();if(!r.ok)throw Error(j.message||r.status);return j}
 $('#logout').onclick=async()=>{await fetch('/api/admin/session',{method:'DELETE',credentials:'same-origin'});location.replace('/backend')};
+const unitButtons=[...document.querySelectorAll('[data-unit]')];
+function showUnit(unit){
+ unitButtons.forEach(button=>button.classList.toggle('active',button.dataset.unit===unit));
+ document.querySelectorAll('[data-units]').forEach(panel=>{panel.hidden=!panel.dataset.units.split(/\s+/).includes(unit)});
+}
+unitButtons.forEach(button=>button.onclick=()=>{showUnit(button.dataset.unit);if(button.dataset.unit==='voz'||button.dataset.unit==='narrador')loadVoice();if(button.dataset.unit==='honor')loadHonorBoard()});
+showUnit('eventos');
 $('#clock').textContent=new Date().toLocaleTimeString('es');
 setInterval(()=>$('#clock').textContent=new Date().toLocaleTimeString('es'),1000);
 $('#connect').onsubmit=async e=>{e.preventDefault();try{const r=await fetch('/api/connect',{method:'POST',headers:{'content-type':'application/json'},credentials:'same-origin',body:JSON.stringify({username:e.target.username.value})});const j=await r.json();if(!r.ok)throw Error(j.message);msg('Conectando con @'+j.username)}catch(x){msg(x.message)}};
 $('#reconnect').onclick=async()=>{try{await admin('/api/admin/reconnect');msg('Reconexión solicitada')}catch(e){msg(e.message)}};
-$('#save').onclick=async()=>{try{await admin('/api/admin/game-settings',{giftTurboProgress:+$('#gift').value,tapTurboProgress:+$('#tap').value});msg('Ajustes guardados')}catch(e){msg(e.message)}};
+$('#saveGiftTurbo').onclick=async()=>{try{await admin('/api/admin/game-settings',{giftTurboProgress:+$('#gift').value,tapTurboProgress:+$('#tap').value});msg('Turbo de regalos guardado')}catch(e){msg(e.message)}};
+$('#saveTapTurbo').onclick=async()=>{try{await admin('/api/admin/game-settings',{giftTurboProgress:+$('#gift').value,tapTurboProgress:+$('#tap').value});msg('Turbo del contador de equipos guardado')}catch(e){msg(e.message)}};
 $('#saveTournament').onclick=async()=>{try{await admin('/api/admin/tournament-enabled',{enabled:$('#tournamentEnabled').checked});msg('Configuración de Torneo Libre guardada')}catch(e){msg(e.message)}};
 $('#reset').onclick=async()=>{if(!confirm('¿Reiniciar el cronómetro y el contador de regalos?'))return;try{await admin('/api/admin/game-tools/reset');msg('Cronómetro reiniciado')}catch(e){msg(e.message)}};
 document.querySelectorAll('[data-command]').forEach(b=>b.onclick=async()=>{try{await admin('/api/admin/game-command',{command:b.dataset.command});msg('Comando enviado')}catch(e){msg(e.message)}});
 const voiceInfo={gift:['Regalo','Agradece el regalo y activa la alerta alegre desde 1 diamante.','🎁'],move:['Cambio de equipo','Anuncia cuando alguien se une o cambia de equipo.','🔁'],chat:['Comentario','Lee el comentario real del usuario.','💬'],welcome:['Ingreso al live','Da la bienvenida a quien entra.','👋'],action:['Acciones','Agradece likes, seguidores y compartidos.','⚡'],match:['Relato de carrera','Informa posiciones, metros restantes y llegada a la meta.','🏁']};
 function renderVoice(data){
- const order=$('#voiceOrder');order.replaceChildren();
- data.levels.slice().sort((a,b)=>a.priority-b.priority).forEach(level=>{
-  const info=voiceInfo[level.id]||[level.id,'Evento de voz configurado.','•'],item=document.createElement('li'),rank=document.createElement('span'),copy=document.createElement('div'),title=document.createElement('b'),desc=document.createElement('p'),phrases=document.createElement('small'),badge=document.createElement('span');
-  item.className='voice-card';rank.className='voice-rank';rank.textContent=info[2];copy.className='voice-copy';title.textContent=info[0];desc.textContent=info[1];
-  const say=typeof level.say==='string'?[level.say]:Object.entries(level.say||{}).map(([key,value])=>key+': '+value);
-  phrases.textContent=say.join(' · ');badge.className='voice-level';badge.textContent='PRIORIDAD '+String(level.priority).padStart(2,'0')+(level.interrupt?' · INTERRUMPE':'');
-  copy.append(title,desc,phrases);item.append(rank,copy,badge);order.append(item);
+ ['voiceOrder','narratorOrder'].forEach(id=>{
+  const order=$('#'+id);if(!order)return;order.replaceChildren();
+  data.levels.slice().sort((a,b)=>a.priority-b.priority).forEach(level=>{
+   const info=voiceInfo[level.id]||[level.id,'Evento de voz configurado.','•'],item=document.createElement('li'),rank=document.createElement('span'),copy=document.createElement('div'),title=document.createElement('b'),desc=document.createElement('p'),phrases=document.createElement('small'),badge=document.createElement('span');
+   item.className='voice-card';rank.className='voice-rank';rank.textContent=info[2];copy.className='voice-copy';title.textContent=info[0];desc.textContent=info[1];
+   const say=typeof level.say==='string'?[level.say]:Object.entries(level.say||{}).map(([key,value])=>key+': '+value);
+   phrases.textContent=say.join(' · ');badge.className='voice-level';badge.textContent='PRIORIDAD '+String(level.priority).padStart(2,'0')+(level.interrupt?' · INTERRUMPE':'');
+   copy.append(title,desc,phrases);item.append(rank,copy,badge);order.append(item);
+  });
  });
 }
-$('#voiceToggle').onclick=async()=>{
- const panel=$('#voicePanel'),open=panel.hidden;panel.hidden=!open;$('#voiceToggle').setAttribute('aria-expanded',String(open));
- $('#voiceToggle').textContent=open?'♫ Ocultar protocolo':'♫ Ver protocolo de voz';
- if(!open)return;
- try{const r=await fetch('/api/voice-priority',{cache:'no-store'});if(!r.ok)throw Error('No se pudo cargar el protocolo de voz ('+r.status+').');const data=await r.json();if(!Array.isArray(data.levels))throw Error('La configuración de voz no tiene niveles válidos.');renderVoice(data);$('#voiceError').textContent='Configuración recibida del servidor · meta a '+data.trackMeters+' m.'}
- catch(e){$('#voiceError').textContent=e.message}
-};
+async function loadVoice(){
+ try{const r=await fetch('/api/voice-priority',{cache:'no-store'});if(!r.ok)throw Error('No se pudo cargar el protocolo de voz ('+r.status+').');const data=await r.json();if(!Array.isArray(data.levels))throw Error('La configuración de voz no tiene niveles válidos.');renderVoice(data);$('#voiceError').textContent='Configuración recibida del servidor · meta a '+data.trackMeters+' m.';$('#narratorError').textContent='Prioridades cargadas desde el servidor.'}
+ catch(e){$('#voiceError').textContent=e.message;$('#narratorError').textContent=e.message}
+}
+$('#voiceToggle').onclick=()=>{showUnit('voz');loadVoice()};
+async function loadHonorBoard(){
+ try{const response=await fetch('/api/state/cluss.v1',{cache:'no-store'});if(response.status===404){$('#honorBoard').textContent='Todavía no hay resultados guardados.';return}const result=await response.json();if(!response.ok)throw Error(result.message||response.status);$('#honorBoard').textContent=JSON.stringify({wins:result.wins||[],cups:result.cp||{},races:result.races||0,tournamentMode:result.tournamentMode||'clasico'},null,2)}
+ catch(error){$('#honorBoard').textContent=error.message}
+}
+function formatTime(ms){const seconds=Math.floor(Math.max(0,ms)/1000);return Math.floor(seconds/60)+':'+String(seconds%60).padStart(2,'0')}
+function renderMotorTeams(teams,target){
+ target.replaceChildren();
+ if(!Array.isArray(teams)||!teams.length){const empty=document.createElement('div');empty.className='unit-empty';empty.textContent='Esperando valores del motor…';target.append(empty);return}
+ teams.forEach(team=>{
+  const card=document.createElement('article'),title=document.createElement('h3'),meter=document.createElement('div'),fill=document.createElement('i'),values=document.createElement('div');
+  card.className='motor-card';title.textContent=team.name;meter.className='meter';fill.style.width=Math.max(0,Math.min(100,team.progress))+'%';meter.append(fill);values.className='motor-values';
+  [['Avance',team.progress.toFixed(1)+'%'],['Taps',Math.floor(team.taps)+' / '+team.tapLimit],['Eventos',Math.floor(team.eventTotal)],['Turbo taps',Math.ceil(team.turboMs/1000)+' s'],['Turbo regalos',Math.ceil(team.giftTurboMs/1000)+' s']].forEach(([label,value])=>{const cell=document.createElement('span');cell.textContent=label+': ';const strong=document.createElement('b');strong.textContent=value;cell.append(strong);values.append(cell)});
+  card.append(title,meter,values);target.append(card);
+ });
+}
+let lastMotorUpdate=0;
+function renderMotor(state){
+ if(!state)return;
+ lastMotorUpdate=state.updatedAt||Date.now();$('#motorStatus').textContent=state.phase.toUpperCase();$('#motorStatus').classList.toggle('online',state.phase==='running');
+ $('#motorPhase').textContent=state.phase.toUpperCase();$('#motorUpdated').textContent='Actualizado '+new Date(lastMotorUpdate).toLocaleTimeString('es');
+ $('#motorElapsed').textContent=formatTime(state.elapsedMs);$('#motorIdle').textContent=state.idleSeconds+' s';$('#motorWinner').textContent=state.winner||'—';
+ $('#motorEvents').textContent=String(Object.values(state.stats||{}).reduce((sum,value)=>sum+(Number(value)||0),0));
+ $('#motorStats').textContent=JSON.stringify(state.stats,null,2);renderMotorTeams(state.teams,$('#motorTeams'));renderMotorTeams(state.teams,$('#teamTelemetry'));
+}
 let received=0;const source=new EventSource('/api/events');
 source.addEventListener('status',e=>{const s=JSON.parse(e.data),online=!!s.connected;$('#status').textContent=online?'ONLINE':String(s.status||'DESCONECTADO').toUpperCase();$('#status').classList.toggle('online',online);$('#statusDetail').textContent=online?'Conectado a @'+(s.username||'TikTok'):'Estado del conector: '+(s.status||'sin conexión')+(s.username?' · @'+s.username:'')});
-source.addEventListener('update',()=>{$('#eventCount').textContent=String(++received)});
+source.addEventListener('update',e=>{const payload=JSON.parse(e.data),entry=payload.entry||{};received++;$('#eventCount').textContent=String(received);$('#eventUnitCount').textContent=String(received);$('#lastMotorEvent').textContent=JSON.stringify({type:entry.type,username:entry.username,activityCount:entry.activityCount,giftName:entry.giftName,content:entry.content},null,2)});
+const motorSource=new EventSource('/api/admin/motor/events');
+motorSource.addEventListener('motor-state',event=>renderMotor(JSON.parse(event.data)));
+setInterval(()=>{if(lastMotorUpdate&&Date.now()-lastMotorUpdate>2500){$('#motorStatus').textContent='TELEMETRÍA ATRASADA';$('#motorStatus').classList.remove('online')}},1000);
 const tools=new EventSource('/api/game-tools/events');
-tools.addEventListener('game-tools',e=>{const x=JSON.parse(e.data);$('#tools').textContent=JSON.stringify(x,null,2);$('#giftCount').textContent=String(x.giftCount||0)});
+tools.addEventListener('game-tools',e=>{const x=JSON.parse(e.data);$('#tools').textContent=JSON.stringify(x,null,2);$('#giftCount').textContent=String(x.giftCount||0);$('#giftUnitCount').textContent=String(x.giftCount||0)});
 tools.addEventListener('game-settings',e=>{const x=JSON.parse(e.data);$('#gift').value=x.giftTurboProgress;$('#tap').value=x.tapTurboProgress});
+fetch('/api/recent-users',{cache:'no-store'}).then(async response=>{const result=await response.json();if(!response.ok)throw Error(result.message||response.status);$('#recentUsers').textContent=JSON.stringify(result.users||[],null,2)}).catch(error=>{$('#recentUsers').textContent=error.message});
+fetch('/api/admin/tournament-enabled',{credentials:'same-origin',cache:'no-store'}).then(async response=>{const result=await response.json();if(!response.ok)throw Error(result.message||response.status);$('#tournamentEnabled').checked=!!result.enabled}).catch(error=>msg(error.message));
 async function refresh(){
  try{
   const [p,c]=await Promise.all([fetch('/api/admin/presence',{credentials:'same-origin'}),fetch('/api/admin/country-stats',{credentials:'same-origin'})]);
@@ -837,6 +951,23 @@ async function handle(req, res) {
     }]]);
     return;
   }
+  if (path === '/api/motor/telemetry' && req.method === 'POST') {
+    const telemetry = normalizeMotorTelemetry(await readBody(req));
+    if (!telemetry) {
+      safeJson(res, 400, { message: 'Telemetría del motor inválida.' });
+      return;
+    }
+    motorTelemetry = telemetry;
+    broadcastSse(motorClients, 'motor-state', motorTelemetry);
+    broadcastSse(clients, 'motor-state', motorTelemetry);
+    safeJson(res, 200, { ok: true, updatedAt: motorTelemetry.updatedAt });
+    return;
+  }
+  if (path === '/api/admin/motor/events' && req.method === 'GET') {
+    if (!requireAdmin(req, res)) return;
+    sse(req, res, motorClients, [['motor-state', motorTelemetry]]);
+    return;
+  }
   if (path === '/api/game-tools/events' && req.method === 'GET') {
     sse(req, res, toolClients, [
       ['game-settings', { giftTurboProgress: settings.giftTurboProgress, tapTurboProgress: settings.tapTurboProgress }],
@@ -852,8 +983,7 @@ async function handle(req, res) {
   }
   if (path === '/api/deployment-signature' && req.method === 'GET') {
     const html = await readFile(HTML_FILE);
-    const signature = `sha256-${createHash('sha256').update(html).digest('hex').slice(0, 16)}`;
-    safeJson(res, 200, { signature });
+    safeJson(res, 200, { signature: deploymentSignature(html) });
     return;
   }
   if (path === '/api/voice-priority' && req.method === 'GET') {
@@ -1065,6 +1195,11 @@ async function handle(req, res) {
     }
     broadcastTool('game-command', { command: body.command });
     safeJson(res, 200, { ok: true });
+    return;
+  }
+  if (path === '/api/admin/tournament-enabled' && req.method === 'GET') {
+    if (!requireAdmin(req, res)) return;
+    safeJson(res, 200, { enabled: settings.tournamentEnabled });
     return;
   }
   if (path === '/api/admin/tournament-enabled' && req.method === 'POST') {

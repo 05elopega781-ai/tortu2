@@ -13,7 +13,7 @@ RUN npm ci --omit=dev && npm cache clean --force
 COPY server.js ./
 COPY server/ ./server/
 COPY public/ ./public/
-COPY v21_voz_saludos_backend.html ./
+COPY overlay.html ./
 
 RUN mkdir -p /app/data && chown node:node /app/data
 USER node
