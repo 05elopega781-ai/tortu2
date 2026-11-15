@@ -22,16 +22,17 @@ test('live event counters count events, not weighted interaction points', () => 
   assert.equal(policy.statEventDelta('gift', 3), 30);
 });
 
-test('idle visual advance counts only time since the last interaction and resets per race', () => {
+test('idle visual advance alternates teams at two meters per second and resets per race', () => {
   const browser = { window: {} };
   runInNewContext(readFileSync(new URL('./public/activity-policy.js', import.meta.url), 'utf8'), browser);
   const advance = browser.window.TORTUWORLD_ACTIVITY_POLICY.createIdleVisualAdvance();
   advance.reset(1000);
-  assert.equal(advance.update(2000, 1000, true), 1);
-  assert.equal(advance.update(2500, 2300, true), 1.2);
-  assert.equal(advance.update(3500, 2500, false), 1.2);
+  assert.deepEqual(Array.from(advance.update(2000, 1000, true)), [2, 0]);
+  assert.deepEqual(Array.from(advance.update(2500, 1000, true)), [2, 1]);
+  assert.deepEqual(Array.from(advance.update(3000, 1000, true)), [2, 2]);
+  assert.deepEqual(Array.from(advance.update(4000, 3000, false)), [2, 2]);
   advance.reset(4000);
-  assert.equal(advance.update(5000, 4000, true), 1);
+  assert.deepEqual(Array.from(advance.update(5000, 4000, true)), [2, 0]);
 });
 
 test('voice phrase cache blocks normalized repeats until the configured minute expires', () => {
@@ -270,7 +271,7 @@ test('backend VS settings default to the two requested fixtures and validate sav
   }
 });
 
-test('gift catalog starts with Rose enabled and validates the rotation interval', async () => {
+test('gift catalog enables all gifts, migrates saved settings, and validates the rotation interval', async () => {
   const previousToken = process.env.BACKEND_ADMIN_TOKEN;
   process.env.BACKEND_ADMIN_TOKEN = 'gift-config-test-token';
   const server = createServer((req, res) => void handle(req, res));
@@ -310,7 +311,7 @@ test('gift catalog starts with Rose enabled and validates the rotation interval'
       ['private-jet', 6000], ['sports-car', 7000], ['yacht', 9888], ['eagle', 10999],
       ['rocket', 20000], ['fantasy-castle', 20000], ['lion', 29999], ['tiktok-universe', 44999],
     ]);
-    assert.deepEqual(defaultConfig.catalog.filter(item => item.enabled).map(item => item.key), ['rose']);
+    assert.deepEqual(defaultConfig.catalog.filter(item => item.enabled).map(item => item.key), defaultConfig.catalog.map(item => item.key));
 
     await fetch(`${baseUrl}/api/state/cluss.gifts`, {
       method: 'PUT',
@@ -321,12 +322,18 @@ test('gift catalog starts with Rose enabled and validates the rotation interval'
         catalog: [{ key: 'rose', name: 'Rose (Rosita)', value: 1, enabled: true, aliases: ['rose'] }]
       })
     });
+    const snapshotResponse = await fetch(`${baseUrl}/api/state.js`);
+    const snapshotScript = await snapshotResponse.text();
+    const snapshot = JSON.parse(snapshotScript.replace(/^window\.CLUSS_STATE = /, '').replace(/;$/, ''));
+    assert.equal(snapshot['cluss.gifts'].v, 2);
+    assert.deepEqual(snapshot['cluss.gifts'].catalog.filter(item => item.enabled).map(item => item.key), snapshot['cluss.gifts'].catalog.map(item => item.key));
+
     const migratedResponse = await fetch(`${baseUrl}/api/admin/gifts-config`, { headers });
     const migrated = await migratedResponse.json();
     assert.equal(migrated.catalog.length, 28);
     assert.equal(migrated.rotationSeconds, 14);
     assert.equal(migrated.catalog.find(item => item.key === 'tiktok-universe').value, 44999);
-    assert.deepEqual(migrated.catalog.filter(item => item.enabled).map(item => item.key), ['rose']);
+    assert.deepEqual(migrated.catalog.filter(item => item.enabled).map(item => item.key), migrated.catalog.map(item => item.key));
 
     const invalid = await fetch(`${baseUrl}/api/admin/gifts-config`, {
       method: 'POST',
@@ -820,7 +827,9 @@ test('honor rotates only enabled gifts at the configured interval', () => {
       rotationSeconds: 7,
       catalog: [
         { key: 'rose', name: 'Rosita', value: 1, enabled: true, aliases: ['rose'] },
-        { key: 'heart', name: 'Corazón', value: 5, enabled: true, aliases: ['heart'] },
+        { key: 'heart', name: 'Corazón', value: 100, enabled: true, aliases: ['heart'] },
+        { key: 'diamond', name: 'Diamante', value: 1000, enabled: true, aliases: ['diamond'] },
+        { key: 'rocket', name: 'Cohete', value: 20000, enabled: true, aliases: ['rocket'] },
         { key: 'star', name: 'Estrella', value: 2, enabled: false, aliases: ['star'] },
       ]
     }) },
@@ -832,26 +841,36 @@ test('honor rotates only enabled gifts at the configured interval', () => {
   runInNewContext(script, context);
 
   assert.equal(intervals.length, 2);
+  assert.match(honorMarkup, /Cohete/);
+  assert.match(honorMarkup, /20\.000/);
   context.handleLiveEntry({ type: 'gift', username: 'ana', giftName: 'Rose', activityCount: 1 });
   context.handleLiveEntry({ type: 'gift', username: 'luz', giftName: 'Heart', activityCount: 2 });
-  assert.match(honorMarkup, /@luz/);
-  assert.match(honorMarkup, /Corazón · 5 🪙 ×2/);
-
+  assert.match(honorMarkup, /Cohete/);
   intervals[1]();
   assert.match(honorMarkup, /@ana/);
+  assert.match(honorMarkup, /Rosita · 1 🪙 ×1/);
+  intervals[1]();
+  assert.match(honorMarkup, /Diamante/);
   intervals[1]();
   assert.match(honorMarkup, /@luz/);
+  assert.match(honorMarkup, /Corazón · 100 🪙 ×2/);
   context.handleLiveEntry({ type: 'gift', username: 'sol', giftName: 'Star', activityCount: 1 });
-  assert.match(honorMarkup, /@luz/);
+  assert.match(honorMarkup, /Corazón/);
 
   eventListeners['gift-config-update']({ detail: {
     rotationSeconds: 7,
     catalog: [
       { key: 'rose', name: 'Rosita', value: 1, enabled: true, aliases: ['rose'] },
-      { key: 'heart', name: 'Corazón', value: 5, enabled: false, aliases: ['heart'] },
     ]
   } });
   assert.match(honorMarkup, /@ana/);
+
+  eventListeners['gift-config-update']({ detail: {
+    rotationSeconds: 1,
+    catalog: [{ key: 'rose', name: 'Rosita', value: 1, enabled: false, aliases: ['rose'] }]
+  } });
+  assert.match(honorMarkup, /No hay regalos habilitados/);
+  assert.doesNotMatch(honorMarkup, /Rosita/);
 });
 
 test('TikTok events are normalized to the six allowed types without forwarding bot', () => {

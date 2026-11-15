@@ -1324,7 +1324,7 @@ function say(m){$('#bub').textContent=m}
 function update(){
  let best=-1,mx=0;
  const idleAdvance=typeof window.getIdleVisualAdvanceMeters==='function'?window.getIdleVisualAdvanceMeters():0;
- S.forEach((s,i)=>{const p=Math.min(100,s.p+idleAdvance),h=p*4.7;
+ S.forEach((s,i)=>{const p=Math.min(100,s.p+(idleAdvance[i]||0)),h=p*4.7;
   $('#tt'+i).style.transform=`translateY(${54-p*4.8}px)`; /* +34: arranca mas abajo, cubriendo los huevos chicos · 4.8: al 100% la CABEZA toca la linea de META */
   $('#clubName'+i).setAttribute('y',p<=50?456+54-p*4.8-16:528+54-p*4.8+14);
   $('#gf'+i).setAttribute('y',536-h);$('#gf'+i).setAttribute('height',h);$('#gk'+i).setAttribute('cy',536-h);
@@ -2267,7 +2267,7 @@ setInterval(()=>{
   .finally(()=>{motorPostBusy=false});
 },250);
 const idleStat=document.createElement('div');
-idleStat.className='st';idleStat.dataset.k='idle';idleStat.title='Tiempo restante sin interacción · avance visual de 1 metro por segundo';
+idleStat.className='st';idleStat.dataset.k='idle';idleStat.title='Tiempo restante sin interacción · avance visual alternado de 2 metros por segundo';
 idleStat.innerHTML='<b>⏳</b><span id="idleCountdown" aria-live="off">60s</span>';
 document.getElementById('evs').appendChild(idleStat);
 /* limite de taps actual (HEART_N): al llenarlo se activa el turbo */
@@ -3598,12 +3598,12 @@ setInterval(()=>{try{if(over||document.hidden)return;let best=null;pts.forEach((
 <script>
 (function(){
 const side=document.querySelector('.side');if(!side)return;
-const box=document.createElement('section');box.id='honor';box.setAttribute('aria-label','Sala de honor: top 3 de regalos del partido');
+const box=document.createElement('section');box.id='honor';box.setAttribute('aria-label','Regalos habilitados y aportes del live');
 box.innerHTML='<div class="hh">🏅 HONOR</div><div class="pd" id="hnPd"></div>';
 const ref=side.querySelector('.bub')||side.firstChild;side.insertBefore(box,ref);
 const pd=box.querySelector('#hnPd');
 const esc=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-let C=new Map(),hit=''; /* HONOR: rota usuarios y regalos habilitados */
+let C=new Map(),hit=''; /* HONOR: rota el catálogo habilitado y muestra aportes reales */
 const av=url=>/^https:/.test(url||'')?`<img class="av" alt="" src="${esc(url)}" onerror="this.replaceWith((()=>{const r=document.createElement('div');r.className='av rose';r.setAttribute('aria-hidden','true');r.textContent='🌹';return r})())">`:`<div class="av rose" aria-hidden="true">🌹</div>`;
 const rango=n=>n>=10?['👑 LEYENDA','#ff4d6d']:n>=3?['🔥 FANÁTICO','#ff9a1f']:['⭐ HINCHA','#ffd34d'];
 const giftNameKey=value=>String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,60);
@@ -3622,15 +3622,30 @@ const giftForEvent=e=>{
  const name=giftNameKey(e.giftName),key=giftKey(e.giftName,e.giftId);
  return giftConfig.catalog.find(item=>item.enabled&&(item.key===key||item.aliases.includes(name)));
 };
-function currentEntries(){return[...C.entries()].filter(([,item])=>giftConfig.catalog.some(gift=>gift.enabled&&gift.key===item.giftKey))}
-function pinta(e){
- if(!e){pd.innerHTML=`<div class="sl s1 vac">${av('')}</div>`;return}
- const tm=(e.t>=0&&T[e.t])?T[e.t]:null,col=tm?(tm.c==='#f1f1f1'?'#e5e5e5':tm.c):'#ffe14d',rg=rango(e.n),gift=giftConfig.catalog.find(item=>item.key===e.giftKey),value=gift&&gift.value?gift.value+' 🪙':'valor sin informar';
+function currentEntries(){
+ const enabled=giftConfig.catalog.filter(gift=>gift.enabled);
+ const cheap=enabled.filter(gift=>Number(gift.value)<=100).sort((a,b)=>Number(a.value)-Number(b.value));
+ const expensive=enabled.filter(gift=>Number(gift.value)>100).sort((a,b)=>Number(b.value)-Number(a.value));
+ const ordered=[];
+ for(let i=0;i<Math.max(cheap.length,expensive.length);i++){
+  if(expensive[i])ordered.push(expensive[i]);
+  if(cheap[i])ordered.push(cheap[i]);
+ }
+ return ordered;
+}
+function pinta(gift){
+ if(!gift){pd.innerHTML='<div class="sl s1 vac"><span class="ct">No hay regalos habilitados</span></div>';return}
+ const contributor=[...C.values()].filter(item=>item.giftKey===gift.key).sort((a,b)=>b.n-a.n)[0]||null;
+ const tm=contributor&&contributor.t>=0?T[contributor.t]:null,col=tm?(tm.c==='#f1f1f1'?'#e5e5e5':tm.c):'#ffe14d';
+ const rg=contributor?rango(contributor.n):['🎁 REGALO HABILITADO','#ffd34d'];
+ const value=Number(gift.value)>0?Number(gift.value).toLocaleString('es')+' 🪙':'valor sin informar';
  let fl='';try{if(tm)fl=`<svg class="hflag" viewBox="0 0 40 26" aria-hidden="true">${flag(tm.id,0,0,40,26)}</svg>`}catch(x){}
- pd.innerHTML=`<div class="sl s1 gm${e.key===hit?' hit':''}" style="--tc:${col}">${fl}<div class="avw">${av(e.url)}</div><div class="tx"><span class="un">@${esc(e.user)}</span>${tm?`<span class="cl">${esc(tm.n)}</span>`:''}<span class="rg" style="--rc:${rg[1]}">${rg[0]}</span><span class="ct">🎁 ${esc(gift&&gift.name||e.giftName)} · ${esc(value)} ×${e.n}</span></div></div>`}
+ const name=contributor?`@${esc(contributor.user)}`:'Catálogo de regalos';
+ const count=contributor?` ×${contributor.n}`:'';
+ pd.innerHTML=`<div class="sl s1 gm${contributor&&contributor.key===hit?' hit':''}" style="--tc:${col}">${fl}<div class="avw">${av(contributor&&contributor.url)}</div><div class="tx"><span class="un">${name}</span>${tm?`<span class="cl">${esc(tm.n)}</span>`:''}<span class="rg" style="--rc:${rg[1]}">${rg[0]}</span><span class="ct">🎁 ${esc(gift.name)} · ${esc(value)}${count}</span></div></div>`}
 function rotate(){
  const items=currentEntries();if(!items.length){cursor=0;pinta(null);return}
- cursor=(cursor+1)%items.length;pinta(items[cursor][1]);
+ cursor=(cursor+1)%items.length;pinta(items[cursor]);
 }
 function scheduleRotation(){
  clearInterval(rotationTimer);
@@ -3638,7 +3653,7 @@ function scheduleRotation(){
 }
 function setGiftConfig(value){
  giftConfig=normalizeGiftConfig(value);cursor=0;
- const items=currentEntries();pinta(items.length?items[0][1]:null);scheduleRotation();
+ const items=currentEntries();pinta(items.length?items[0]:null);scheduleRotation();
 }
 function honra(e){const u=String(e.username),n=Math.max(1,+e.activityCount||1);
  const gift=giftForEvent(e);if(!gift)return;
@@ -3646,15 +3661,16 @@ function honra(e){const u=String(e.username),n=Math.max(1,+e.activityCount||1);
  const key=u.toLowerCase()+'|'+gift.key,c=C.get(key)||{key,user:u,giftKey:gift.key,giftName:gift.name,n:0,url:'',t:-1};
  c.n+=n;if(url)c.url=url;c.giftName=gift.name;c.giftValue=gift.value;
  let tt=-1;try{tt=recentChatTeam(u.toLowerCase())}catch(x){}if(tt>=0)c.t=tt;
- C.set(key,c);cursor=[...C.keys()].indexOf(key);hit=key;pinta(c);hit=''}
+ C.set(key,c);const items=currentEntries();
+ if(items[cursor]&&items[cursor].key===gift.key){hit=key;pinta(gift);hit=''}}
 const _h=handleLiveEntry;
 handleLiveEntry=function(e){const r=_h.apply(this,arguments);try{if(e&&!e.bot&&e.type==='gift'&&e.username)honra(e)}catch(x){}return r};
-const _r=reset;reset=function(){C.clear();cursor=0;pinta(null);return _r.apply(this,arguments)};
+const _r=reset;reset=function(){C.clear();cursor=0;pinta(currentEntries()[0]||null);return _r.apply(this,arguments)};
 window.addEventListener('gift-config-update',event=>setGiftConfig(event.detail));
 /* SALA DE HONOR: se vacia en CADA partido. Ademas del reset del juego, vigila el cambio de duelo y el cierre de la pantalla de ganador. */
 let hSig='',hWin=false;
 setInterval(()=>{try{const sg=T[0].n+'|'+T[1].n,w=!!document.querySelector('#win.show');
- if((hSig&&sg!==hSig)||(hWin&&!w)){C=new Map();cursor=0;pinta(null)}hSig=sg;hWin=w}catch(e){}},400);
+ if((hSig&&sg!==hSig)||(hWin&&!w)){C=new Map();cursor=0;pinta(currentEntries()[0]||null)}hSig=sg;hWin=w}catch(e){}},400);
 setGiftConfig(giftConfig);
 })();
 </script>

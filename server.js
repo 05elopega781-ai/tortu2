@@ -43,7 +43,7 @@ const COUNTRIES = [
   ['JP', 'Japón', ['japon', 'japón', '🇯🇵', 'jp']]
 ].map(([code, name, aliases]) => ({ code, name, aliases }));
 const DEFAULT_VS_CONFIG_VERSION = 4;
-const DEFAULT_GIFT_CONFIG_VERSION = 1;
+const DEFAULT_GIFT_CONFIG_VERSION = 2;
 const DEFAULT_GIFT_CATALOG = [
   { key: 'rose', name: '🌹 Rosa', value: 1, enabled: true, aliases: ['rose', 'rosa', 'rosita'] },
   { key: 'tiktok', name: '⚽ Pelota / TikTok', value: 1, enabled: false, aliases: ['tiktok', 'ball', 'football', 'soccer', 'soccer ball', 'pelota'] },
@@ -73,7 +73,7 @@ const DEFAULT_GIFT_CATALOG = [
   { key: 'fantasy-castle', name: '🏰 Castillo de fantasía', value: 20000, enabled: false, aliases: ['fantasy castle', 'castillo de fantasia'] },
   { key: 'lion', name: '🦁 León', value: 29999, enabled: false, aliases: ['lion', 'leon'] },
   { key: 'tiktok-universe', name: '🪐 Universo TikTok', value: 44999, enabled: false, aliases: ['tiktok universe', 'universo tiktok'] }
-];
+].map(item => ({ ...item, enabled: true }));
 const DEFAULT_VS = [
   { k: 'cp|ol', label: 'OLIMPIA vs CERRO', on: true, popular: true },
   { k: 'ucl-bc|ucl-rm', label: 'BARCELONA vs REAL MADRID', on: true, popular: true },
@@ -177,8 +177,9 @@ function giftCatalogKey(name, giftId) {
 
 function giftConfigView(value) {
   const current = value?.v === DEFAULT_GIFT_CONFIG_VERSION && Array.isArray(value.catalog);
+  const migrating = value?.v === 1 && Array.isArray(value.catalog);
   const stored = new Map();
-  for (const item of current ? value.catalog : []) {
+  for (const item of current || migrating ? value.catalog : []) {
     if (!item || typeof item.key !== 'string' || typeof item.name !== 'string') continue;
     const key = giftNameKey(item.key);
     const name = item.name.trim().slice(0, 120);
@@ -188,7 +189,7 @@ function giftConfigView(value) {
       key,
       name,
       value: Number.isFinite(itemValue) ? Math.min(1000000, Math.max(0, Math.floor(itemValue))) : 0,
-      enabled: item.enabled === true,
+      enabled: migrating || item.enabled === true,
       aliases: Array.isArray(item.aliases)
         ? [...new Set(item.aliases.filter(alias => typeof alias === 'string').map(giftNameKey).filter(Boolean))]
         : []
@@ -560,6 +561,9 @@ async function getState(key) {
 async function loadGiftConfig() {
   const stored = await getState('cluss.gifts');
   giftCatalogConfig = giftConfigView(stored.value);
+  if (!stored.found || stored.value?.v !== DEFAULT_GIFT_CONFIG_VERSION) {
+    await setState('cluss.gifts', giftCatalogConfig);
+  }
   return giftCatalogConfig;
 }
 
@@ -628,7 +632,19 @@ async function stateSnapshot() {
     }
     if (!ALLOWED_STATE_KEY.test(key) || key.startsWith('cluss.log.')) continue;
     const item = await getState(key);
-    if (item.found) state[key] = item.value;
+    if (!item.found) continue;
+    if (key === 'cluss.gifts') {
+      state[key] = giftConfigView(item.value);
+      if (item.value?.v !== DEFAULT_GIFT_CONFIG_VERSION) {
+        await setState(key, state[key]);
+      }
+    } else {
+      state[key] = item.value;
+    }
+  }
+  if (!state['cluss.gifts']) {
+    state['cluss.gifts'] = giftConfigView(null);
+    await setState('cluss.gifts', state['cluss.gifts']);
   }
   if (!state['cluss.chatArchive']) {
     const meta = await loadJson(resolve(DATA_DIR, 'chat-archive-meta.json'), null);

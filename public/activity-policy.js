@@ -68,25 +68,35 @@
       return hash % teamCount;
     },
     createIdleVisualAdvance: function () {
-      var meters = 0;
+      var meters = [0, 0];
+      var idleMs = 0;
       var lastAt = null;
       return {
         reset: function (now) {
-          meters = 0;
+          meters = [0, 0];
+          idleMs = 0;
           lastAt = Number(now);
           if (!Number.isFinite(lastAt)) lastAt = Date.now();
-          return meters;
+          return meters.slice();
         },
         update: function (now, lastInteractionAt, enabled) {
           var current = Number(now);
-          if (!Number.isFinite(current)) return meters;
+          if (!Number.isFinite(current)) return meters.slice();
           var interaction = Number(lastInteractionAt);
           var start = lastAt === null
             ? current
             : Math.max(lastAt, Number.isFinite(interaction) ? interaction : current);
-          if (enabled && lastAt !== null) meters += Math.max(0, current - start) / 1000;
+          var remaining = enabled && lastAt !== null ? Math.max(0, current - start) : 0;
+          while (remaining > 0) {
+            var turnPosition = idleMs % 1000;
+            var elapsed = Math.min(remaining, 1000 - turnPosition);
+            var movingTeam = Math.floor(idleMs / 1000) % 2;
+            meters[movingTeam] += elapsed * 2 / 1000;
+            idleMs += elapsed;
+            remaining -= elapsed;
+          }
           lastAt = current;
-          return meters;
+          return meters.slice();
         }
       };
     }
