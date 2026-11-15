@@ -43,6 +43,10 @@ const COUNTRIES = [
   ['JP', 'Japón', ['japon', 'japón', '🇯🇵', 'jp']]
 ].map(([code, name, aliases]) => ({ code, name, aliases }));
 const DEFAULT_VS_CONFIG_VERSION = 3;
+const DEFAULT_GIFT_CONFIG_VERSION = 1;
+const DEFAULT_GIFT_CATALOG = [
+  { key: 'rose', name: 'Rose (Rosita)', value: 1, enabled: true, aliases: ['rose', 'rosa', 'rosita'] }
+];
 const DEFAULT_VS = [
   { k: 'cp|ol', label: 'OLIMPIA vs CERRO', on: true },
   { k: 'ucl-bc|ucl-rm', label: 'BARCELONA vs REAL MADRID', on: true },
@@ -65,7 +69,7 @@ const DEFAULT_VS = [
   { k: 'ct-de|ct-nl', label: 'ALEMANIA vs PAÍSES BAJOS', on: false },
   { k: 'ct-de|ct-it', label: 'ALEMANIA vs ITALIA', on: false }
 ];
-const ALLOWED_STATE_KEY = /^cluss\.(?:v1|torneoLock|lang|crest\.[\w-]+|vs|fans|stats|libreVotes|chatArchive|log\.[\w.-]+)$/;
+const ALLOWED_STATE_KEY = /^cluss\.(?:v1|torneoLock|lang|crest\.[\w-]+|vs|gifts|fans|stats|libreVotes|chatArchive|log\.[\w.-]+)$/;
 
 const clients = new Set();
 const toolClients = new Set();
@@ -101,6 +105,7 @@ let settings = {
 };
 let overlayActive = false;
 let motorTelemetry = null;
+let giftCatalogConfig = giftConfigView(null);
 
 function normalizeUsername(value) {
   return String(value || '').trim().replace(/@/g, '').replace(/\s+/g, '');
@@ -122,6 +127,48 @@ function vsConfigView(value) {
       on: current ? enabled.get(item.k) === true : item.on
     })),
     st: value?.st && typeof value.st === 'object' && !Array.isArray(value.st) ? value.st : {}
+  };
+}
+
+function giftNameKey(value) {
+  return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
+}
+
+function giftCatalogKey(name, giftId) {
+  const key = giftNameKey(name);
+  if (['rose', 'rosa', 'rosita', 'tiktok-rose'].includes(key)) return 'rose';
+  return key || (giftId ? `id-${giftNameKey(giftId)}` : '');
+}
+
+function giftConfigView(value) {
+  const current = value?.v === DEFAULT_GIFT_CONFIG_VERSION && Array.isArray(value.catalog);
+  const source = current ? value.catalog : DEFAULT_GIFT_CATALOG;
+  const catalog = [];
+  for (const item of source) {
+    if (!item || typeof item.key !== 'string' || typeof item.name !== 'string') continue;
+    const key = giftNameKey(item.key);
+    const name = item.name.trim().slice(0, 120);
+    if (!key || !name || catalog.some(existing => existing.key === key)) continue;
+    const value = Number(item.value);
+    catalog.push({
+      key,
+      name,
+      value: Number.isFinite(value) ? Math.min(1000000, Math.max(0, Math.floor(value))) : 0,
+      enabled: item.enabled === true,
+      aliases: Array.isArray(item.aliases)
+        ? [...new Set(item.aliases.filter(alias => typeof alias === 'string').map(giftNameKey).filter(Boolean))]
+        : []
+    });
+  }
+  if (!catalog.some(item => item.key === 'rose')) {
+    catalog.unshift({ ...DEFAULT_GIFT_CATALOG[0], enabled: !current });
+  }
+  const rotation = Number(value?.rotationSeconds);
+  return {
+    v: DEFAULT_GIFT_CONFIG_VERSION,
+    rotationSeconds: Number.isInteger(rotation) ? Math.min(3600, Math.max(1, rotation)) : 10,
+    catalog
   };
 }
 
@@ -190,8 +237,10 @@ function normalizeTikTokEvent(type, data) {
   } else if (type === 'gift') {
     entry.activityCount = Math.max(1, Math.floor(Number(data.activityCount ?? data.repeatCount ?? data.count ?? 1) || 1));
     entry.giftName = String(data.giftName || data.gift_name || data.giftDetails?.giftName || data.gift?.name || data.gift || data.giftId || '').slice(0, 120);
+    entry.giftId = String(data.giftId ?? data.gift_id ?? data.giftDetails?.giftId ?? data.giftDetails?.gift_id ?? data.gift?.id ?? '').slice(0, 80);
     const diamonds = Number(data.diamondCount ?? data.diamond_count ?? data.giftDetails?.diamondCount ?? data.giftDetails?.diamond_count ?? data.gift?.diamondCount ?? data.gift?.diamond_count ?? 0);
-    entry.giftDiamonds = Number.isFinite(diamonds) && diamonds > 0 ? Math.floor(diamonds) : 0;
+    entry.giftValue = Number.isFinite(diamonds) && diamonds > 0 ? Math.floor(diamonds) : 0;
+    entry.giftDiamonds = entry.giftValue;
   }
   if (!entry.username && !entry.displayName && type !== 'chat') return null;
   if (type === 'chat' && !entry.content) return null;
@@ -466,10 +515,40 @@ async function getState(key) {
   }
 }
 
+async function loadGiftConfig() {
+  const stored = await getState('cluss.gifts');
+  giftCatalogConfig = giftConfigView(stored.value);
+  return giftCatalogConfig;
+}
+
 async function setState(key, value) {
   const path = statePath(key);
   if (!path) throw new Error('Clave de estado no permitida.');
   await writeJsonAtomic(path, value);
+}
+
+let giftCatalogUpdateQueue = Promise.resolve();
+function rememberGiftCatalogEntry(entry) {
+  const key = giftCatalogKey(entry.giftName, entry.giftId);
+  if (!key) return Promise.resolve();
+  giftCatalogUpdateQueue = giftCatalogUpdateQueue.catch(() => {}).then(async () => {
+    const item = giftCatalogConfig.catalog.find(gift => gift.key === key);
+    if (item) {
+      if (entry.giftValue > 0 && item.value !== entry.giftValue) item.value = entry.giftValue;
+      else return;
+    } else {
+      giftCatalogConfig.catalog.push({
+        key,
+        name: String(entry.giftName || `Regalo ${entry.giftId}`).trim().slice(0, 120),
+        value: Math.max(0, Math.floor(Number(entry.giftValue) || 0)),
+        enabled: false,
+        aliases: [giftNameKey(entry.giftName)].filter(Boolean)
+      });
+    }
+    await setState('cluss.gifts', giftCatalogConfig);
+    broadcastTool('gift-config', giftCatalogConfig);
+  });
+  return giftCatalogUpdateQueue;
 }
 
 async function deleteState(key) {
@@ -625,6 +704,7 @@ function handleTikTokEvent(type, raw) {
     entry.activityCount = comboDelta(raw);
     if (entry.activityCount < 1) return;
     entry.giftDiamonds *= entry.activityCount;
+    void rememberGiftCatalogEntry(entry).catch(error => recordTechnicalLog('error', `No se pudo actualizar el catálogo de regalos: ${error.message}`));
     settings.giftCount += entry.activityCount;
     void persistSettings().catch(error => recordTechnicalLog('error', `No se pudo guardar el contador de regalos: ${error.message}`));
     broadcastTool('game-tools', { timerStartedAt: settings.timerStartedAt, giftCount: settings.giftCount });
@@ -854,7 +934,7 @@ input{border:1px solid #31435a;background:#0a1220;color:var(--text);padding:.65r
 .unit-nav{display:flex;gap:8px;overflow-x:auto;padding:7px 2px 14px;margin:4px 0 8px;scrollbar-width:thin}.unit-nav button{flex:0 0 auto;padding:.58rem .85rem;font-size:12px}.unit-nav button.active{border-color:var(--cyan);background:#173449;color:#fff;box-shadow:0 0 0 2px #62e6ff18}
 .layout{display:grid;grid-template-columns:1.2fr .8fr;gap:14px}.panel{padding:19px;margin-bottom:14px}.panel header{margin-bottom:16px}.panel h2{display:flex;align-items:center;gap:9px}.icon{width:30px;height:30px;border-radius:9px;display:inline-grid;place-items:center;background:#1b3341;color:var(--cyan)}
 .voice-panel{border-color:#355654;background:linear-gradient(140deg,#13231f,#101827)}.voice-order{list-style:none;padding:0;margin:15px 0 0;display:grid;gap:9px}.voice-card{display:grid;grid-template-columns:39px 1fr auto;gap:12px;align-items:start;padding:13px;border:1px solid #294237;border-radius:11px;background:#0d191b}.voice-rank{width:34px;height:34px;display:grid;place-items:center;border-radius:10px;color:#0a1a1b;background:var(--lime);font-weight:950}.voice-copy b{font-size:13px}.voice-copy p{margin:3px 0;color:var(--muted);font-size:12px}.voice-copy small{display:block;color:#a8c0bd;overflow-wrap:anywhere;font-size:11px}.voice-level{color:#8da69e;font-size:9px;letter-spacing:.08em;font-weight:800}.voice-hint{margin:12px 0 0;padding:10px 12px;background:#152b24;border-radius:9px;color:#c4e7c4;font-size:12px}
-.form-row{display:flex;flex-wrap:wrap;gap:10px;align-items:end}.field{display:grid;gap:5px;color:var(--muted);font-size:11px}.field input{width:130px}.field.token{min-width:min(100%,340px);flex:1}.field.token input{width:100%}.toolbar{display:flex;flex-wrap:wrap;gap:8px;margin-top:15px}.toolbar p{display:flex;gap:8px;margin:0;flex-wrap:wrap}.checkrow{display:flex;align-items:center;gap:9px;color:#c9d6e5}.checkrow input{accent-color:var(--lime)}.vs-config-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:7px;margin-top:12px;max-height:320px;overflow:auto;padding-right:4px}.vs-config-list .checkrow{padding:9px 10px;border:1px solid #25374a;border-radius:8px;background:#0a111c;font-size:12px}.message{min-height:24px;color:var(--cyan);font-size:12px;margin:14px 0 0}.pre{padding:11px;border:1px solid #25374a;border-radius:9px;background:#0a111c;color:#b9c9dc;white-space:pre-wrap;overflow-wrap:anywhere;font:11px/1.5 ui-monospace,Consolas,monospace;max-height:230px;overflow:auto}.country-box{margin-top:12px}.motor-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.motor-card{border:1px solid #25374a;border-radius:11px;background:#0a111c;padding:12px}.motor-card h3{margin:0 0 8px;font-size:13px}.motor-card .meter{height:8px;background:#1a2938;border-radius:8px;overflow:hidden;margin:8px 0}.motor-card .meter i{display:block;height:100%;background:linear-gradient(90deg,#62e6ff,#a4f36d)}.motor-values{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;color:var(--muted);font-size:11px}.motor-values b{color:var(--text);font-weight:700}.unit-empty{padding:14px;border:1px dashed #29465b;border-radius:10px;color:var(--muted)}.server-footer{display:flex;justify-content:space-between;gap:12px;color:#657b94;font-size:10px;padding:18px 0}
+.form-row{display:flex;flex-wrap:wrap;gap:10px;align-items:end}.field{display:grid;gap:5px;color:var(--muted);font-size:11px}.field input{width:130px}.field.token{min-width:min(100%,340px);flex:1}.field.token input{width:100%}.toolbar{display:flex;flex-wrap:wrap;gap:8px;margin-top:15px}.toolbar p{display:flex;gap:8px;margin:0;flex-wrap:wrap}.checkrow{display:flex;align-items:center;gap:9px;color:#c9d6e5}.checkrow input{accent-color:var(--lime)}.vs-config-list,.gift-catalog-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:7px;margin-top:12px;max-height:320px;overflow:auto;padding-right:4px}.vs-config-list .checkrow,.gift-catalog-list .checkrow{padding:9px 10px;border:1px solid #25374a;border-radius:8px;background:#0a111c;font-size:12px}.message{min-height:24px;color:var(--cyan);font-size:12px;margin:14px 0 0}.pre{padding:11px;border:1px solid #25374a;border-radius:9px;background:#0a111c;color:#b9c9dc;white-space:pre-wrap;overflow-wrap:anywhere;font:11px/1.5 ui-monospace,Consolas,monospace;max-height:230px;overflow:auto}.country-box{margin-top:12px}.motor-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.motor-card{border:1px solid #25374a;border-radius:11px;background:#0a111c;padding:12px}.motor-card h3{margin:0 0 8px;font-size:13px}.motor-card .meter{height:8px;background:#1a2938;border-radius:8px;overflow:hidden;margin:8px 0}.motor-card .meter i{display:block;height:100%;background:linear-gradient(90deg,#62e6ff,#a4f36d)}.motor-values{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;color:var(--muted);font-size:11px}.motor-values b{color:var(--text);font-weight:700}.unit-empty{padding:14px;border:1px dashed #29465b;border-radius:10px;color:var(--muted)}.server-footer{display:flex;justify-content:space-between;gap:12px;color:#657b94;font-size:10px;padding:18px 0}
 .event-list{list-style:none;padding:0;margin:0;display:grid;gap:8px;max-height:430px;overflow-y:auto}.event-row{display:grid;grid-template-columns:72px 100px minmax(100px,.55fr) minmax(0,1.45fr);gap:10px;align-items:start;padding:10px 12px;border:1px solid #25374a;border-radius:9px;background:#0a111c;font-size:12px}.event-row time,.event-user{color:var(--muted)}.event-kind{color:var(--cyan);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.04em}.event-detail{overflow-wrap:anywhere;white-space:pre-wrap}.log-row{display:grid;grid-template-columns:78px 70px minmax(0,1fr);gap:10px;align-items:start;padding:10px 12px;border:1px solid #25374a;border-radius:9px;background:#0a111c;font-size:12px}.log-row time{color:var(--muted)}.log-level{font-size:10px;font-weight:800;letter-spacing:.05em}.log-level.error{color:var(--red)}.log-level.info{color:var(--cyan)}.log-message{overflow-wrap:anywhere;white-space:pre-wrap}
 .event-layout{display:grid;grid-template-columns:minmax(0,1fr) 190px;gap:14px;align-items:start}.event-filters{padding:12px;border:1px solid var(--line);border-radius:11px;background:#0c1522}.event-filters h3{margin:0 0 10px;font-size:12px}.event-filter{display:flex;align-items:center;gap:8px;padding:5px 0;color:#c9d6e5;font-size:12px}.event-filter input{width:auto;margin:0;accent-color:var(--cyan)}.event-toolbar{display:flex;justify-content:flex-end;margin-bottom:10px}.event-toolbar button{padding:.5rem .75rem;font-size:12px}
 @media(max-width:850px){.hero,.layout{grid-template-columns:1fr}.hero{gap:20px;padding-top:30px}.connection-card{max-width:none}}@media(max-width:560px){.shell{padding:0 14px 28px}.topbar{height:68px}.topmeta{gap:8px}.live-tag{font-size:9px}.hero h1{font-size:37px}.stats{gap:7px}.stat{padding:12px 10px}.panel{padding:15px}.voice-card{grid-template-columns:34px 1fr}.voice-level{grid-column:2}.field.token{min-width:100%}.event-layout{grid-template-columns:1fr}.event-filters{order:-1}.event-filters form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 10px}.event-row{grid-template-columns:60px 1fr;gap:6px}.event-user,.event-detail{grid-column:2}.event-kind{grid-column:1;grid-row:2}.log-row{grid-template-columns:60px 1fr;gap:6px}.log-message{grid-column:2}}
@@ -870,7 +950,7 @@ input{border:1px solid #31435a;background:#0a1220;color:var(--text);padding:.65r
 <section class="panel business-panel" data-units="eventos"><header><h2><span class="icon">⚡</span> Eventos LIVE</h2><span class="pill">ÚLTIMOS 50</span></header><p class="subtle">Eventos recibidos en esta sesión: <b id="eventUnitCount">0</b>. Los más recientes aparecen primero.</p><div class="event-layout"><div><div class="event-toolbar"><button type="button" id="copyEvents">Copiar eventos visibles</button></div><p class="message" id="eventMessage" role="status"></p><p class="unit-empty" id="eventEmpty">Esperando eventos de TikTok…</p><ol class="event-list" id="eventList" aria-live="polite"></ol></div><aside class="event-filters" aria-label="Filtrar eventos"><h3>Mostrar eventos</h3><form id="eventFilterForm"><label class="event-filter"><input type="checkbox" data-event-filter="all" checked> Todos</label><label class="event-filter"><input type="checkbox" data-event-filter="member" checked> Se unieron</label><label class="event-filter"><input type="checkbox" data-event-filter="chat" checked> Comentarios</label><label class="event-filter"><input type="checkbox" data-event-filter="like" checked> Me gusta / taps</label><label class="event-filter"><input type="checkbox" data-event-filter="follow" checked> Seguidores</label><label class="event-filter"><input type="checkbox" data-event-filter="share" checked> Compartidos</label><label class="event-filter"><input type="checkbox" data-event-filter="gift" checked> Regalos</label></form></aside></div><pre class="pre" id="tools" hidden></pre></section>
 <section class="panel business-panel" data-units="logs" id="logsPanel"><header><h2><span class="icon">📜</span> Logs técnicos</h2><span class="pill" id="logsCount">SESIÓN ACTUAL</span></header><p class="subtle">Avisos y errores recientes del servidor. Se conservan mientras esta sesión del servidor está activa.</p><div class="toolbar"><button id="refreshLogs">Actualizar</button></div><p class="unit-empty" id="logsEmpty">Sin registros técnicos todavía.</p><ol class="event-list" id="serverLogs" aria-live="polite"></ol><p class="message" id="logsError" role="status"></p></section>
 <section class="panel business-panel" data-units="usuarios"><header><h2><span class="icon">👤</span> Usuarios</h2><span class="pill">LIVE</span></header><pre class="pre" id="recentUsers">Cargando usuarios…</pre><article class="connection-card user-connection"><header><h2>Conexión TikTok</h2><span class="status-pill" id="status">CONECTANDO</span></header><p class="subtle">Usuario actual: <b id="currentUsername">Sin usuario</b></p><p class="subtle" id="statusDetail">Esperando estado del servidor…</p><form id="connect" class="form-row"><label class="field">Usuario del live<input name="username" placeholder="Ingresa el usuario sin @" required></label><button class="primary">Conectar</button><button type="button" id="reconnect">Reintentar</button></form></article></section>
-<section class="panel business-panel" data-units="regalos turbo-regalos"><header><h2><span class="icon">🎁</span> Regalos y turbo de regalos</h2><span class="pill">CONTROL</span></header><p class="subtle">Total recibidos: <b id="giftUnitCount">0</b></p><div class="form-row"><label class="field">Avance total del turbo por regalos (%)<input id="gift" type="number" min="0" max="100" value="6"></label><button class="primary" id="saveGiftTurbo">Guardar turbo de regalos</button></div></section>
+<section class="panel business-panel" data-units="regalos turbo-regalos"><header><h2><span class="icon">🎁</span> Negocio de regalos</h2><span class="pill">CATÁLOGO Y ROTACIÓN</span></header><p class="subtle">Total recibidos: <b id="giftUnitCount">0</b></p><div class="form-row"><label class="field">Avance total del turbo por regalos (%)<input id="gift" type="number" min="0" max="100" value="6"></label><button class="primary" id="saveGiftTurbo">Guardar turbo de regalos</button></div><h3>Catálogo de regalos</h3><p class="subtle">Rosita empieza habilitada. Los demás regalos aparecen con su valor cuando se reciben y quedan deshabilitados hasta que los actives.</p><div class="form-row"><label class="field">Rotar en el cuadro de honor cada (segundos)<input id="giftRotation" type="number" min="1" max="3600" value="10"></label></div><div id="giftCatalogList" class="gift-catalog-list"><div class="unit-empty">Cargando catálogo…</div></div><div class="toolbar"><button class="primary" id="saveGiftCatalog">Guardar catálogo y rotación</button></div><p class="message" id="giftConfigMessage" role="status"></p></section>
 <section class="panel business-panel" data-units="equipos turbo-equipos"><header><h2><span class="icon">🐢</span> Equipos y turbo del contador</h2><span class="pill">MOTOR</span></header><div class="form-row"><label class="field">Avance del turbo por taps (%)<input id="tap" type="number" min="0" max="100" value="20"></label><button class="primary" id="saveTapTurbo">Guardar turbo de equipos</button><button data-command="turbo-down">Turbo −</button><button data-command="turbo-up">Turbo +</button></div><div class="motor-grid" id="teamTelemetry"><div class="unit-empty">Esperando valores del motor…</div></div></section>
 <section class="panel business-panel" data-units="motor"><header><h2><span class="icon">⚙</span> Motor en tiempo real</h2><span class="pill" id="motorStatus">SIN TELEMETRÍA</span></header><p class="subtle">Valores actuales reportados por el overlay y retransmitidos por el servidor.</p><div class="stats"><article class="stat"><span class="stat-label">Fase</span><strong id="motorPhase">—</strong><small id="motorUpdated">Esperando al overlay</small></article><article class="stat"><span class="stat-label">Duración</span><strong id="motorElapsed">—</strong><small>Tiempo de carrera</small></article><article class="stat"><span class="stat-label">Inactividad</span><strong id="motorIdle">—</strong><small>Cuenta regresiva</small></article></div><p class="subtle">Ganador: <b id="motorWinner">—</b> · Eventos procesados: <b id="motorEvents">0</b></p><div class="motor-grid" id="motorTeams"><div class="unit-empty">El overlay debe estar abierto para publicar telemetría.</div></div><pre class="pre" id="motorStats">Estadísticas del motor: esperando datos…</pre></section>
 <section class="panel business-panel" data-units="torneos"><header><h2><span class="icon">🏆</span> Torneos</h2><span class="pill">VS Y VOTACIÓN</span></header><label class="checkrow"><input id="tournamentEnabled" type="checkbox"> Registrar votos de comentarios reales</label><div class="toolbar"><button class="primary" id="saveTournament">Guardar configuración</button></div><h3>VS habilitados</h3><p class="subtle">Olimpia vs Cerro y Barcelona vs Real Madrid empiezan activos. Los cambios de VS se aplican cuando el contador de inactividad llega a cero.</p><div id="vsConfigList" class="vs-config-list"><div class="unit-empty">Cargando VS…</div></div><div class="toolbar"><button class="primary" id="saveVsConfig">Guardar VS activos</button></div><p class="message" id="vsConfigMessage" role="status"></p></section>
@@ -884,6 +964,25 @@ input{border:1px solid #31435a;background:#0a1220;color:var(--text);padding:.65r
 <script>
 const $=s=>document.querySelector(s),headers=()=>({'content-type':'application/json'}),msg=t=>$('#message').textContent=t;
 async function admin(path,body){const r=await fetch(path,{method:'POST',headers:headers(),credentials:'same-origin',body:JSON.stringify(body||{})});const j=await r.json();if(!r.ok)throw Error(j.message||r.status);return j}
+function renderGiftConfig(config){
+ const list=$('#giftCatalogList');if(!list)return;
+ list.replaceChildren();
+ config.catalog.forEach(gift=>{
+  const label=document.createElement('label'),input=document.createElement('input'),name=document.createElement('span');
+  label.className='checkrow';input.type='checkbox';input.dataset.giftKey=gift.key;input.checked=gift.enabled;
+  name.textContent=gift.name+' · '+(gift.value?gift.value+' diamante(s)':'valor sin informar');
+  label.append(input,name);list.append(label);
+ });
+ $('#giftRotation').value=config.rotationSeconds;
+}
+async function loadGiftConfig(){
+ const status=$('#giftConfigMessage');status.textContent='';
+ try{
+  const response=await fetch('/api/admin/gifts-config',{credentials:'same-origin',cache:'no-store'}),config=await response.json();
+  if(!response.ok)throw Error(config.message||response.status);
+  renderGiftConfig(config);
+ }catch(error){$('#giftCatalogList').textContent=error.message;status.textContent='No se pudo cargar el catálogo de regalos.'}
+}
 async function loadVsConfig(){
  const list=$('#vsConfigList'),status=$('#vsConfigMessage');
  list.textContent='Cargando VS…';status.textContent='';
@@ -906,6 +1005,7 @@ function showUnit(unit,scrollToPanel=false){
  panels.forEach(panel=>{panel.hidden=!panel.dataset.units.split(/\\s+/).includes(unit)});
  if(scrollToPanel)panels.find(panel=>panel.dataset.units.split(/\\s+/).includes(unit))?.scrollIntoView({behavior:'smooth',block:'start'});
  if(unit==='logs')loadTechnicalLogs();
+ if(unit==='regalos'||unit==='turbo-regalos')loadGiftConfig();
  if(unit==='torneos')loadVsConfig();
 }
 $('#businessUnits').addEventListener('click',event=>{
@@ -924,6 +1024,14 @@ $('#refreshLogs').onclick=loadTechnicalLogs;
 $('#connect').onsubmit=async e=>{e.preventDefault();try{const r=await fetch('/api/connect',{method:'POST',headers:{'content-type':'application/json'},credentials:'same-origin',body:JSON.stringify({username:e.target.username.value})});const j=await r.json();if(!r.ok)throw Error(j.message);msg('Conectando con @'+j.username)}catch(x){msg(x.message)}};
 $('#reconnect').onclick=async()=>{try{await admin('/api/admin/reconnect');msg('Reconexión solicitada')}catch(e){msg(e.message)}};
 $('#saveGiftTurbo').onclick=async()=>{try{await admin('/api/admin/game-settings',{giftTurboProgress:+$('#gift').value,tapTurboProgress:+$('#tap').value});msg('Turbo de regalos guardado')}catch(e){msg(e.message)}};
+$('#saveGiftCatalog').onclick=async()=>{
+ const enabledKeys=Array.from(document.querySelectorAll('#giftCatalogList input[type="checkbox"]:checked')).map(input=>input.dataset.giftKey);
+ const rotationSeconds=Number($('#giftRotation').value);
+ try{
+  const result=await admin('/api/admin/gifts-config',{enabledKeys,rotationSeconds});
+  renderGiftConfig(result.config);$('#giftConfigMessage').textContent='Catálogo guardado. Los regalos habilitados rotarán en el cuadro de honor.';
+ }catch(error){$('#giftConfigMessage').textContent=error.message}
+};
 $('#saveTapTurbo').onclick=async()=>{try{await admin('/api/admin/game-settings',{giftTurboProgress:+$('#gift').value,tapTurboProgress:+$('#tap').value});msg('Turbo del contador de equipos guardado')}catch(e){msg(e.message)}};
 $('#saveTournament').onclick=async()=>{try{await admin('/api/admin/tournament-enabled',{enabled:$('#tournamentEnabled').checked});msg('Configuración de Torneo Libre guardada')}catch(e){msg(e.message)}};
 $('#saveVsConfig').onclick=async()=>{
@@ -1052,6 +1160,7 @@ setInterval(()=>{if(lastMotorUpdate&&Date.now()-lastMotorUpdate>2500){$('#motorS
 const tools=new EventSource('/api/game-tools/events');
 tools.addEventListener('game-tools',e=>{const x=JSON.parse(e.data);$('#tools').textContent=JSON.stringify(x,null,2);$('#giftCount').textContent=String(x.giftCount||0);$('#giftUnitCount').textContent=String(x.giftCount||0)});
 tools.addEventListener('game-settings',e=>{const x=JSON.parse(e.data);$('#gift').value=x.giftTurboProgress;$('#tap').value=x.tapTurboProgress});
+tools.addEventListener('gift-config',e=>{try{renderGiftConfig(JSON.parse(e.data))}catch(error){$('#giftConfigMessage').textContent='No se pudo actualizar el catálogo: '+error.message}});
 fetch('/api/recent-users',{cache:'no-store'}).then(async response=>{const result=await response.json();if(!response.ok)throw Error(result.message||response.status);$('#recentUsers').textContent=JSON.stringify(result.users||[],null,2)}).catch(error=>{$('#recentUsers').textContent=error.message});
 fetch('/api/admin/tournament-enabled',{credentials:'same-origin',cache:'no-store'}).then(async response=>{const result=await response.json();if(!response.ok)throw Error(result.message||response.status);$('#tournamentEnabled').checked=!!result.enabled}).catch(error=>msg(error.message));
 async function refresh(){
@@ -1154,9 +1263,11 @@ async function handle(req, res) {
     return;
   }
   if (path === '/api/game-tools/events' && req.method === 'GET') {
+    const config = await loadGiftConfig();
     sse(req, res, toolClients, [
       ['game-settings', { giftTurboProgress: settings.giftTurboProgress, tapTurboProgress: settings.tapTurboProgress }],
-      ['game-tools', { timerStartedAt: settings.timerStartedAt, giftCount: settings.giftCount }]
+      ['game-tools', { timerStartedAt: settings.timerStartedAt, giftCount: settings.giftCount }],
+      ['gift-config', config]
     ]);
     return;
   }
@@ -1417,6 +1528,36 @@ async function handle(req, res) {
     safeJson(res, 200, { ok: true, enabledKeys });
     return;
   }
+  if (path === '/api/admin/gifts-config' && req.method === 'GET') {
+    if (!requireAdmin(req, res)) return;
+    safeJson(res, 200, await loadGiftConfig());
+    return;
+  }
+  if (path === '/api/admin/gifts-config' && req.method === 'POST') {
+    if (!requireAdmin(req, res)) return;
+    const body = await readBody(req);
+    const config = await loadGiftConfig();
+    const rotationSeconds = Number(body.rotationSeconds);
+    const enabledKeys = body.enabledKeys;
+    const knownKeys = new Set(config.catalog.map(item => item.key));
+    if (!Number.isInteger(rotationSeconds) || rotationSeconds < 1 || rotationSeconds > 3600 ||
+        !Array.isArray(enabledKeys) || enabledKeys.length > config.catalog.length ||
+        enabledKeys.some(key => typeof key !== 'string' || !knownKeys.has(key)) ||
+        new Set(enabledKeys).size !== enabledKeys.length) {
+      safeJson(res, 400, { message: 'Revisa la rotación y la selección del catálogo de regalos.' });
+      return;
+    }
+    const enabled = new Set(enabledKeys);
+    giftCatalogConfig = {
+      ...config,
+      rotationSeconds,
+      catalog: config.catalog.map(item => ({ ...item, enabled: enabled.has(item.key) }))
+    };
+    await setState('cluss.gifts', giftCatalogConfig);
+    broadcastTool('gift-config', giftCatalogConfig);
+    safeJson(res, 200, { ok: true, config: giftCatalogConfig });
+    return;
+  }
   if (path === '/api/admin/tournament-enabled' && req.method === 'POST') {
     if (!requireAdmin(req, res)) return;
     const body = await readBody(req);
@@ -1453,6 +1594,7 @@ async function handle(req, res) {
 async function main() {
   await mkdir(DATA_DIR, { recursive: true });
   settings = { ...settings, ...(await loadJson(resolve(DATA_DIR, 'settings.json'), {})) };
+  await loadGiftConfig();
   if (Array.isArray(settings.recentUsers)) recentUsers.push(...settings.recentUsers.slice(0, 4));
   settings.countryStats ||= Object.fromEntries([...COUNTRIES.map(country => country.code), 'sin-pais'].map(code => [code, { comments: 0, cups: 0 }]));
   for (const country of COUNTRIES) {

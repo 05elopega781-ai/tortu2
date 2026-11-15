@@ -188,6 +188,70 @@ test('backend VS settings default to the two requested fixtures and validate sav
   }
 });
 
+test('gift catalog starts with Rose enabled and validates the rotation interval', async () => {
+  const previousToken = process.env.BACKEND_ADMIN_TOKEN;
+  process.env.BACKEND_ADMIN_TOKEN = 'gift-config-test-token';
+  const server = createServer((req, res) => void handle(req, res));
+  server.listen(0, '127.0.0.1');
+  await new Promise(resolve => server.once('listening', resolve));
+  const baseUrl = `http://127.0.0.1:${server.address().port}`;
+  let previousState;
+  let hadPreviousState = false;
+
+  try {
+    const savedState = await fetch(`${baseUrl}/api/state/cluss.gifts`);
+    if (savedState.ok) {
+      hadPreviousState = true;
+      previousState = await savedState.json();
+    }
+    await fetch(`${baseUrl}/api/state/cluss.gifts`, { method: 'DELETE' });
+
+    const login = await fetch(`${baseUrl}/api/admin/session`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ token: 'gift-config-test-token' })
+    });
+    const cookie = login.headers.get('set-cookie').split(';', 1)[0];
+    const headers = { cookie, 'content-type': 'application/json' };
+
+    const defaults = await fetch(`${baseUrl}/api/admin/gifts-config`, { headers });
+    assert.equal(defaults.status, 200);
+    const defaultConfig = await defaults.json();
+    assert.equal(defaultConfig.rotationSeconds, 10);
+    assert.deepEqual(defaultConfig.catalog.filter(item => item.enabled).map(item => item.key), ['rose']);
+
+    const invalid = await fetch(`${baseUrl}/api/admin/gifts-config`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ enabledKeys: ['rose'], rotationSeconds: 0 })
+    });
+    assert.equal(invalid.status, 400);
+
+    const saved = await fetch(`${baseUrl}/api/admin/gifts-config`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ enabledKeys: ['rose'], rotationSeconds: 12 })
+    });
+    assert.equal(saved.status, 200);
+    const updated = await saved.json();
+    assert.equal(updated.config.rotationSeconds, 12);
+    assert.deepEqual(updated.config.catalog.filter(item => item.enabled).map(item => item.key), ['rose']);
+  } finally {
+    if (hadPreviousState) {
+      await fetch(`${baseUrl}/api/state/cluss.gifts`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(previousState)
+      });
+    } else {
+      await fetch(`${baseUrl}/api/state/cluss.gifts`, { method: 'DELETE' });
+    }
+    await new Promise(resolve => server.close(resolve));
+    if (previousToken === undefined) delete process.env.BACKEND_ADMIN_TOKEN;
+    else process.env.BACKEND_ADMIN_TOKEN = previousToken;
+  }
+});
+
 test('overlay retains the active VS until inactivity and resets cups only on the next VS', () => {
   const html = readFileSync(new URL('./overlay.html', import.meta.url), 'utf8');
   const script = html.match(/<script id="vs-motor-js">([\s\S]*?)<\/script>/)?.[1];
@@ -284,11 +348,17 @@ test('honor avatar uses a pulsing TikTok rose without placeholder text when no p
   };
   const side = { firstChild: {}, querySelector: () => null, insertBefore() {} };
   const context = {
+    window: { addEventListener() {} },
     document: {
       querySelector: () => side,
       createElement: () => box,
     },
-    setInterval() {},
+    setInterval: () => 1,
+    clearInterval() {},
+    safe: callback => {
+      try { return callback(); } catch { return undefined; }
+    },
+    SRV: { get: () => null },
     T: [],
     recentChatTeam: () => -1,
     handleLiveEntry() {},
@@ -542,6 +612,78 @@ test('overlay displays package.json version and uses it in deployment signature'
   }
 });
 
+test('tap counter heart has no pulse animation while gift rotation remains configurable', () => {
+  const html = readFileSync(new URL('./overlay.html', import.meta.url), 'utf8');
+  assert.doesNotMatch(html, /@keyframes\s+(?:gmHeart|hbp)\b/);
+  assert.doesNotMatch(html, /\.hb(?:\.bump|\.full)?\s+\.hi\s*\{[^}]*animation/s);
+  assert.match(html, /rotationTimer=setInterval\(rotate,giftConfig\.rotationSeconds\*1000\)/);
+  assert.match(html, /gift-config-update/);
+});
+
+test('honor rotates only enabled gifts at the configured interval', () => {
+  const html = readFileSync(new URL('./overlay.html', import.meta.url), 'utf8');
+  const marker = "const box=document.createElement('section');box.id='honor'";
+  const markerIndex = html.indexOf(marker);
+  const scriptStart = html.lastIndexOf('<script>', markerIndex);
+  const scriptEnd = html.indexOf('</script>', markerIndex);
+  const script = html.slice(scriptStart + '<script>'.length, scriptEnd);
+  const eventListeners = {};
+  const intervals = [];
+  let honorMarkup = '';
+  const pd = {};
+  Object.defineProperty(pd, 'innerHTML', { set: value => { honorMarkup = value; } });
+  const box = {
+    setAttribute() {},
+    querySelector: () => pd,
+    set innerHTML(value) { honorMarkup = value; },
+  };
+  const side = { firstChild: {}, querySelector: () => null, insertBefore() {} };
+  const context = {
+    window: { addEventListener: (name, callback) => { eventListeners[name] = callback; } },
+    document: { querySelector: () => side, createElement: () => box },
+    setInterval: callback => { intervals.push(callback); return intervals.length; },
+    clearInterval() {},
+    safe: callback => {
+      try { return callback(); } catch { return undefined; }
+    },
+    SRV: { get: () => ({
+      rotationSeconds: 7,
+      catalog: [
+        { key: 'rose', name: 'Rosita', value: 1, enabled: true, aliases: ['rose'] },
+        { key: 'heart', name: 'Corazón', value: 5, enabled: true, aliases: ['heart'] },
+        { key: 'star', name: 'Estrella', value: 2, enabled: false, aliases: ['star'] },
+      ]
+    }) },
+    T: [],
+    recentChatTeam: () => -1,
+    handleLiveEntry() {},
+    reset() {},
+  };
+  runInNewContext(script, context);
+
+  assert.equal(intervals.length, 2);
+  context.handleLiveEntry({ type: 'gift', username: 'ana', giftName: 'Rose', activityCount: 1 });
+  context.handleLiveEntry({ type: 'gift', username: 'luz', giftName: 'Heart', activityCount: 2 });
+  assert.match(honorMarkup, /@luz/);
+  assert.match(honorMarkup, /Corazón · 5 💎 ×2/);
+
+  intervals[1]();
+  assert.match(honorMarkup, /@ana/);
+  intervals[1]();
+  assert.match(honorMarkup, /@luz/);
+  context.handleLiveEntry({ type: 'gift', username: 'sol', giftName: 'Star', activityCount: 1 });
+  assert.match(honorMarkup, /@luz/);
+
+  eventListeners['gift-config-update']({ detail: {
+    rotationSeconds: 7,
+    catalog: [
+      { key: 'rose', name: 'Rosita', value: 1, enabled: true, aliases: ['rose'] },
+      { key: 'heart', name: 'Corazón', value: 5, enabled: false, aliases: ['heart'] },
+    ]
+  } });
+  assert.match(honorMarkup, /@ana/);
+});
+
 test('TikTok events are normalized to the six allowed types without forwarding bot', () => {
   const entry = normalizeTikTokEvent('chat', {
     user: { uniqueId: 'fan1', profilePictureUrl: 'https://example.test/avatar.jpg' },
@@ -558,12 +700,17 @@ test('TikTok events are normalized to the six allowed types without forwarding b
     profilePictureUrl: 'https://example.test/avatar.jpg'
   });
   assert.equal(normalizeTikTokEvent('emote', { comment: 'ignored' }), null);
-  assert.equal(normalizeTikTokEvent('gift', {
+  const gift = normalizeTikTokEvent('gift', {
     user: { uniqueId: 'fan1', avatarUrl: 'https://example.test/avatar.png' },
     gift_name: 'Rose',
+    giftId: 123,
     diamondCount: 1,
     repeatCount: 2
-  })?.giftName, 'Rose');
+  });
+  assert.equal(gift?.giftName, 'Rose');
+  assert.equal(gift?.giftId, '123');
+  assert.equal(gift?.giftValue, 1);
+  assert.equal(gift?.giftDiamonds, 1);
   assert.equal(normalizeTikTokEvent('gift', {
     user: { uniqueId: 'fan1' },
     gift_name: 'Rose',
