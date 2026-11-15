@@ -47,7 +47,7 @@ self.addEventListener('fetch', event => {
         return response;
       } catch {
         return (await cache.match('/')) ||
-          new Response('tortu2 no está disponible sin conexión todavía.', {
+          new Response('Negocio no está disponible sin conexión todavía.', {
             status: 503,
             headers: { 'content-type': 'text/plain; charset=utf-8' }
           });

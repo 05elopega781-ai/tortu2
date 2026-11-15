@@ -46,7 +46,7 @@
   GET    /api/admin/country-stats           conteos por pais (admin).
   GET    /activity-policy.js               script con la politica de taps (TAP_POLICY). [REVISAR: el comentario viejo decia /api/activity-policy.js]
   GET    /manifest.webmanifest y /sw.js    instalar como app.
-  GET    /icons/tortu2-{192,512}.{png,svg} iconos de instalacion de la PWA tortu2.
+  GET    /icons/tortu2-{192,512}.{png,svg} iconos de instalacion de la PWA Negocio.
   GET    /backend                          panel del backend (boton del overlay).
 
  DETALLE DE LAS RUTAS QUE NO ESTAN EN LAS OTRAS PARTES
@@ -241,7 +241,7 @@
   6) La tabla exacta de paises, retencion y despliegue tambien se fija en la PARTE 8.
 
 ========================================================================================================
- PARTE 8 - CONTRATO IMPLEMENTADO EN tortu2 (v1)
+ PARTE 8 - CONTRATO IMPLEMENTADO EN Negocio (v1)
 ========================================================================================================
  El backend de este repositorio implementa los contratos anteriores con estas decisiones concretas:
   - Runtime: Node.js 20 o posterior. El HTML se sirve en / y /index.html; recursos PWA desde /manifest.webmanifest y /sw.js.
@@ -259,7 +259,7 @@
     comentarios se atribuyen al primer alias reconocido, de lo contrario a "sin pais". POST /api/country/cup acepta {countryCode}
     solo para esos codigos.
   - Voz y politica: /api/voice-priority y /activity-policy.js devuelven las tablas/funciones que usa el HTML.
-  - PWA: el nombre instalable es tortu2, el manifiesto declara display fullscreen con fallback standalone y orientacion portrait,
+  - PWA: el nombre instalable es Negocio, el manifiesto declara display fullscreen con fallback standalone y orientacion portrait,
     e incluye iconos PNG de 192 y 512 px. El service worker guarda el shell para abrirlo sin conexion, actualiza navegaciones por red
     y excluye /api/*, /backend y los eventos SSE de la cache. La instalacion requiere HTTPS o localhost.
   - Firma: SHA-256 de 16 hexadecimales del HTML fuente; la firma se sustituye en el meta al servir / y es igual a la respuesta JSON.

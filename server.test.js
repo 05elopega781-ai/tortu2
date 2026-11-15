@@ -348,10 +348,10 @@ test('country recognition accepts names and ISO codes', () => {
   assert.equal(identifyCountry('🇬🇧')?.code, 'GB');
 });
 
-test('PWA manifest is named tortu2 and requests fullscreen with install icons', () => {
+test('PWA manifest is named Negocio and requests fullscreen with install icons', () => {
   const manifest = JSON.parse(readFileSync(new URL('./public/manifest.webmanifest', import.meta.url), 'utf8'));
-  assert.equal(manifest.name, 'tortu2');
-  assert.equal(manifest.short_name, 'tortu2');
+  assert.equal(manifest.name, 'Negocio');
+  assert.equal(manifest.short_name, 'Negocio');
   assert.equal(manifest.display, 'fullscreen');
   assert.deepEqual(manifest.icons.filter(icon => icon.type === 'image/png').map(icon => icon.sizes), ['192x192', '512x512']);
   for (const size of [192, 512]) {

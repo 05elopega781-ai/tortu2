@@ -1,8 +1,8 @@
 {
   "id": "/",
-  "name": "tortu2",
-  "short_name": "tortu2",
-  "description": "Overlay de carreras TortuWorld.",
+  "name": "Negocio",
+  "short_name": "Negocio",
+  "description": "Panel de control y overlay de carreras TortuWorld.",
   "start_url": "/",
   "scope": "/",
   "display": "fullscreen",

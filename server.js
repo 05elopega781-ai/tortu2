@@ -766,7 +766,7 @@ async function serveFile(req, res, path, options = {}) {
 }
 
 const backendPage = `<!doctype html>
-<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#090e18"><title>TortuWorld · Game Server</title>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#090e18"><title>Negocio · Game Server</title>
 <style>
 :root{color-scheme:dark;--bg:#090e18;--panel:#111a29;--panel2:#0d1523;--line:#24364b;--text:#eaf3ff;--muted:#91a4bc;--cyan:#62e6ff;--lime:#a4f36d;--amber:#ffc86b;--red:#ff7189}
 *{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 75% -15%,#18314a 0,transparent 42%),var(--bg);color:var(--text);font:14px/1.5 Inter,Segoe UI,system-ui,sans-serif;min-height:100vh}
@@ -785,7 +785,7 @@ input{border:1px solid #31435a;background:#0a1220;color:var(--text);padding:.65r
 @media(max-width:850px){.hero,.layout{grid-template-columns:1fr}.hero{gap:20px;padding-top:30px}.connection-card{max-width:none}}@media(max-width:560px){.shell{padding:0 14px 28px}.topbar{height:68px}.topmeta{gap:8px}.live-tag{font-size:9px}.hero h1{font-size:37px}.stats{gap:7px}.stat{padding:12px 10px}.stat strong{font-size:18px}.panel{padding:15px}.voice-card{grid-template-columns:34px 1fr}.voice-level{grid-column:2}.field.token{min-width:100%}}
 </style></head>
 <body><div class="shell">
-<header class="topbar"><a class="brand" href="/backend"><span class="brandmark">TW</span><span><b>TORTUWORLD</b><small>GAME SERVER · CONTROL ROOM</small></span></a><div class="topmeta"><span class="live-tag"><i class="dot"></i> LIVE OPS</span><span id="clock">--:--:--</span></div></header>
+<header class="topbar"><a class="brand" href="/backend"><span class="brandmark">NG</span><span><b>NEGOCIO</b><small>GAME SERVER · CONTROL ROOM</small></span></a><div class="topmeta"><span class="live-tag"><i class="dot"></i> LIVE OPS</span><span id="clock">--:--:--</span></div></header>
 <main>
 <section class="hero"><div><span class="eyebrow">Game operations / servidor 01</span><h1>Controla la partida.<br><em>Domina el live.</em></h1><p>Centro de mando organizado por unidades de negocio de TortuWorld.</p><div class="hero-actions"><a href="/">Abrir overlay ↗</a><button class="primary" id="voiceToggle">♫ Voz en off</button></div></div>
 <article class="connection-card" data-units="usuarios acciones"><header><h2>Conexión TikTok</h2><span class="status-pill" id="status">CONECTANDO</span></header><p class="subtle" id="statusDetail">Esperando estado del servidor…</p><form id="connect" class="form-row"><label class="field">Usuario del live<input name="username" placeholder="usuario sin @" required></label><button class="primary">Conectar</button><button type="button" id="reconnect">Reintentar</button></form></article></section>
@@ -805,7 +805,7 @@ input{border:1px solid #31435a;background:#0a1220;color:var(--text);padding:.65r
 <section class="panel business-panel" data-units="narrador voz"><header><h2><span class="icon">🎙</span> Narrador</h2><span class="pill">PROTOCOLO</span></header><p class="subtle">Prioridad actual de narración y reglas de interrupción de voz.</p><ol class="voice-order" id="narratorOrder"></ol><p class="message" id="narratorError" role="status"></p></section>
 <section class="panel business-panel" data-units="acciones"><header><h2><span class="icon">🛠</span> CTAs / Acciones</h2><span class="pill">OPERADOR</span></header><p class="subtle">Herramientas de operación del live y la sesión.</p><div class="toolbar"><button id="reset">Reiniciar cronómetro y regalos</button><button data-command="refresh">Recargar overlay</button><button id="logout">Cerrar sesión protegida</button></div></section>
 <p class="message" id="message" role="status"></p>
-</main><footer class="server-footer"><span>TORTUWORLD GAME SERVER</span><span>Control local · datos en tiempo real</span></footer></div>
+</main><footer class="server-footer"><span>NEGOCIO GAME SERVER</span><span>Control local · datos en tiempo real</span></footer></div>
 <script>
 const $=s=>document.querySelector(s),headers=()=>({'content-type':'application/json'}),msg=t=>$('#message').textContent=t;
 async function admin(path,body){const r=await fetch(path,{method:'POST',headers:headers(),credentials:'same-origin',body:JSON.stringify(body||{})});const j=await r.json();if(!r.ok)throw Error(j.message||r.status);return j}
