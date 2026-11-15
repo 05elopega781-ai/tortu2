@@ -156,20 +156,38 @@ test('backend VS settings default to the two requested fixtures and validate sav
     const defaultList = (await defaults.json()).list;
     assert.equal(defaultList.length, 20);
     assert.deepEqual(defaultList.filter(item => item.on).map(item => item.k), ['cp|ol', 'ucl-bc|ucl-rm']);
+    assert.deepEqual(defaultList.filter(item => item.popular).map(item => item.k), ['cp|ol', 'ucl-bc|ucl-rm']);
+
+    await fetch(`${baseUrl}/api/state/cluss.vs`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        v: 3,
+        cur: 'ucl-bc|ucl-rm',
+        list: [{ k: 'cp|ol', on: false }, { k: 'ucl-bc|ucl-rm', on: true }],
+        st: { 'ucl-bc|ucl-rm': { r: 2 } }
+      })
+    });
+    const migrated = await fetch(`${baseUrl}/api/admin/vs-config`, { headers });
+    const migratedList = (await migrated.json()).list;
+    assert.deepEqual(migratedList.filter(item => item.on).map(item => item.k), ['ucl-bc|ucl-rm']);
+    assert.deepEqual(migratedList.filter(item => item.popular).map(item => item.k), ['cp|ol', 'ucl-bc|ucl-rm']);
 
     const saved = await fetch(`${baseUrl}/api/admin/vs-config`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ enabledKeys: ['ucl-bc|ucl-rm'] })
+      body: JSON.stringify({ enabledKeys: ['ucl-bc|ucl-rm'], popularKeys: [] })
     });
     assert.equal(saved.status, 200);
     const updated = await fetch(`${baseUrl}/api/admin/vs-config`, { headers });
-    assert.deepEqual((await updated.json()).list.filter(item => item.on).map(item => item.k), ['ucl-bc|ucl-rm']);
+    const updatedList = (await updated.json()).list;
+    assert.deepEqual(updatedList.filter(item => item.on).map(item => item.k), ['ucl-bc|ucl-rm']);
+    assert.deepEqual(updatedList.filter(item => item.popular), []);
 
     const invalid = await fetch(`${baseUrl}/api/admin/vs-config`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ enabledKeys: ['not-a-fixture'] })
+      body: JSON.stringify({ enabledKeys: ['ucl-bc|ucl-rm'], popularKeys: ['not-a-fixture'] })
     });
     assert.equal(invalid.status, 400);
   } finally {
@@ -218,7 +236,33 @@ test('gift catalog starts with Rose enabled and validates the rotation interval'
     assert.equal(defaults.status, 200);
     const defaultConfig = await defaults.json();
     assert.equal(defaultConfig.rotationSeconds, 10);
+    assert.equal(defaultConfig.catalog.length, 28);
+    assert.deepEqual(defaultConfig.catalog.map(item => [item.key, item.value]), [
+      ['rose', 1], ['tiktok', 1], ['ice-cream-cone', 1], ['finger-heart', 5],
+      ['panda', 5], ['mic', 5], ['doughnut', 30], ['toilet-paper', 50],
+      ['swan', 99], ['heart', 100], ['confetti', 100], ['sunglasses', 199],
+      ['crown', 199], ['boxing-gloves', 299], ['corgi', 299], ['money-rain', 500],
+      ['diamond', 1000], ['fireworks', 1088], ['train', 2988], ['motorcycle', 2988],
+      ['private-jet', 6000], ['sports-car', 7000], ['yacht', 9888], ['eagle', 10999],
+      ['rocket', 20000], ['fantasy-castle', 20000], ['lion', 29999], ['tiktok-universe', 44999],
+    ]);
     assert.deepEqual(defaultConfig.catalog.filter(item => item.enabled).map(item => item.key), ['rose']);
+
+    await fetch(`${baseUrl}/api/state/cluss.gifts`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        v: 1,
+        rotationSeconds: 14,
+        catalog: [{ key: 'rose', name: 'Rose (Rosita)', value: 1, enabled: true, aliases: ['rose'] }]
+      })
+    });
+    const migratedResponse = await fetch(`${baseUrl}/api/admin/gifts-config`, { headers });
+    const migrated = await migratedResponse.json();
+    assert.equal(migrated.catalog.length, 28);
+    assert.equal(migrated.rotationSeconds, 14);
+    assert.equal(migrated.catalog.find(item => item.key === 'tiktok-universe').value, 44999);
+    assert.deepEqual(migrated.catalog.filter(item => item.enabled).map(item => item.key), ['rose']);
 
     const invalid = await fetch(`${baseUrl}/api/admin/gifts-config`, {
       method: 'POST',
@@ -261,6 +305,7 @@ test('overlay retains the active VS until inactivity and resets cups only on the
     ['ol', 'cp', 'Superclásico'],
     ['ucl-bc', 'ucl-rm', 'El Clásico'],
     ['lib-boc', 'lib-riv', 'Superclásico'],
+    ['cl-cel', 'cl-ran', 'Old Firm'],
   ];
   const listeners = new Map();
   const app = { appendChild() {} };
@@ -309,6 +354,7 @@ test('overlay retains the active VS until inactivity and resets cups only on the
 
   const vs = window.gamiVS;
   assert.deepEqual(Array.from(vs.data.list.filter(item => item.on), item => item.k), ['cp|ol', 'ucl-bc|ucl-rm']);
+  assert.deepEqual(Array.from(vs.data.list.filter(item => item.popular), item => item.k), ['cp|ol', 'ucl-bc|ucl-rm']);
   const currentKey = vs.data.cur;
   listeners.get('vs-config-update')({ detail: { enabledKeys: ['ucl-bc|ucl-rm'] } });
   assert.equal(vs.curVS().k, currentKey);
@@ -325,6 +371,21 @@ test('overlay retains the active VS until inactivity and resets cups only on the
   assert.deepEqual(context.P.cp, { ol: 7 });
   assert.equal(JSON.stringify(context.P.br.duel), JSON.stringify(['ucl-bc', 'ucl-rm']));
   assert.ok(savedStates.some(item => item.key === 'cluss.vs'));
+
+  listeners.get('vs-config-update')({ detail: {
+    enabledKeys: ['cp|ol', 'ucl-bc|ucl-rm', 'lib-boc|lib-riv', 'cl-cel|cl-ran'],
+    popularKeys: ['cp|ol', 'ucl-bc|ucl-rm']
+  } });
+  vs.data.cur = 'cp|ol';
+  const next = () => {
+    vs.data.cur = vs.advance();
+    return vs.data.cur;
+  };
+  assert.equal(next(), 'ucl-bc|ucl-rm');
+  assert.equal(next(), 'lib-boc|lib-riv');
+  assert.equal(next(), 'cp|ol');
+  assert.equal(next(), 'ucl-bc|ucl-rm');
+  assert.equal(next(), 'cl-cel|cl-ran');
 });
 
 test('honor avatar uses a pulsing TikTok rose without placeholder text when no photo exists', () => {
@@ -373,7 +434,7 @@ test('honor avatar uses a pulsing TikTok rose without placeholder text when no p
   assert.match(html, /@keyframes hnRosePulse/);
 });
 
-test('team event totals and cup audience reset to zero for every new race', () => {
+test('team event totals reset on each race and cup cards omit audience', () => {
   const html = readFileSync(new URL('./overlay.html', import.meta.url), 'utf8');
   const resetCode = html.match(/function resetTeamEventTotals\(\)\{[\s\S]*?\n\}/)?.[0];
   assert.ok(resetCode);
@@ -387,34 +448,7 @@ test('team event totals and cup audience reset to zero for every new race', () =
   assert.equal(eventTotals.size, 0);
   assert.deepEqual(renderedTeams, [0, 1]);
   assert.match(html, /resetTeamEventTotals\(\);\s*_resetTurboLimit/);
-  assert.match(html, /class="cc-fans" data-team-id="\$\{esc\(id\)\}">👥 <b>0<\/b>/);
-
-  const fansScript = html.match(/<script id="fans-copas-js">([\s\S]*?)<\/script>/)?.[1];
-  assert.ok(fansScript);
-  const audienceRows = ['ol', 'cp'].map(teamId => ({
-    dataset: { teamId },
-    classList: { toggle() {} },
-    setAttribute() {},
-    innerHTML: '',
-  }));
-  const window = {
-    liveEventMonitor: { receive(event) { return event; } },
-    __known: new Map([['ana', { t: 0 }]]),
-  };
-  const context = {
-    window,
-    document: { getElementById: () => ({ querySelectorAll: () => audienceRows }) },
-    SRV: { set() {} },
-    T: [{ id: 'ol' }, { id: 'cp' }],
-    setInterval() {},
-  };
-  runInNewContext(fansScript, context);
-  assert.match(audienceRows[0].innerHTML, /<b>0<\/b>/);
-  window.liveEventMonitor.receive({ type: 'chat', username: 'ana', bot: false });
-  assert.match(audienceRows[0].innerHTML, /<b>1<\/b>/);
-  window.gamiFans.reset();
-  assert.equal(window.gamiFans.count('ol'), 0);
-  assert.match(audienceRows[0].innerHTML, /<b>0<\/b>/);
+  assert.doesNotMatch(html, /class="cc-fans"|fans-copas-js|gamiFans/);
 });
 
 test('backend exposes business-unit buttons and live motor telemetry', async () => {
@@ -488,6 +522,11 @@ test('backend exposes business-unit buttons and live motor telemetry', async () 
     }
     assert.match(html, /id="serverLogs"/);
     assert.match(html, /Logs técnicos/);
+    const vsPanel = html.match(/<section class="panel business-panel" data-units="equipos torneos">([\s\S]*?)<\/section>/)?.[1];
+    assert.ok(vsPanel);
+    assert.match(vsPanel, /rotación de VS/);
+    assert.match(script, /dataset\.vsPopularKey=duel\.k/);
+    assert.match(script, /unit==='equipos'\)loadVsConfig\(\)/);
     const navigationStart = script.indexOf('const unitButtons=');
     const navigationEnd = script.indexOf("$('#clock').textContent");
     const navigationCode = script.slice(navigationStart, navigationEnd);
@@ -665,7 +704,7 @@ test('honor rotates only enabled gifts at the configured interval', () => {
   context.handleLiveEntry({ type: 'gift', username: 'ana', giftName: 'Rose', activityCount: 1 });
   context.handleLiveEntry({ type: 'gift', username: 'luz', giftName: 'Heart', activityCount: 2 });
   assert.match(honorMarkup, /@luz/);
-  assert.match(honorMarkup, /Corazón · 5 💎 ×2/);
+  assert.match(honorMarkup, /Corazón · 5 🪙 ×2/);
 
   intervals[1]();
   assert.match(honorMarkup, /@ana/);

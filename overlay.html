@@ -85,7 +85,7 @@
   F16 HERRAMIENTAS DEL JUEGO: guardar cronometro y contador de regalos; cada regalo incrementa el contador; el boton reset reinicia ambos; aceptar SOLO comandos de una lista permitida y pasarlos al overlay activo.
   F17 SENAL DEL OVERLAY: recibir la visibilidad del frontend; activo = senal visible en los ultimos 90 s; revisar cada 15 s.
   F18 WHATSAPP: avisar cuando el overlay pasa de activo a inactivo y por cada evento de regalo, solo si las alertas estan habilitadas y configuradas.
-  F19 REGISTROS: recibir lotes de hasta 200; guardar los textos de chat SIN autor; retener los eventos con nombres hasta 90 dias; guardar huellas de fans activos (con sal, sin nombres) en cluss.fans.
+  F19 REGISTROS: recibir lotes de hasta 200; guardar los textos de chat SIN autor; retener los eventos con nombres hasta 90 dias.
   F20 RUTAS EXTRA: GET /api/voice-priority (tabla de voz; el frontend agrega los niveles que falten), GET /manifest.webmanifest, GET /sw.js y el panel en /backend.
   PROHIBIDO PARA EL SERVIDOR: inventar, duplicar o simular usuarios, comentarios, likes o regalos; decidir puntajes, ganadores o cuadro; enviar tipos de evento fuera de la lista de seis.
   [REVISAR] Falta confirmar con el codigo del servidor: el resto de 'Persistencia y registros' (la fila fuente venia cortada), el formato exacto de los documentos de estado y la lista de comandos permitidos (F16).
@@ -202,8 +202,8 @@
   cluss.torneoLock         PUT        string          SI            "libre" | "auto" | id de torneo fijo elegido con el boton 🔒
   cluss.lang               PUT        chico           SI            idioma del relator por torneo {libre:"es",champions:"en",...}
   cluss.crest.<id>         PUT        string (URL)    SI            cache de la URL del escudo encontrada en Wikipedia
-  cluss.vs                 PUT        mediano         SI            LISTA DE VS (habilitar/deshabilitar: [{k,on}] en orden de rotacion), VS en curso (cur) y ESTADISTICAS por VS (rondas, eventos, valor, vacias, por equipo, ganadores). Clave pesada: 1 PUT / 5 s
-  cluss.fans               PUT        chico           SI            FANS ACTIVOS por club: {v,active_ms,c:{idClub:{huella:ultimaInteraccionMs}}}. Solo huellas con sal (no nombres). Clave pesada: 1 PUT / 5 s
+  cluss.vs                 PUT        mediano         SI            LISTA DE VS (habilitar/deshabilitar y popularidad: [{k,on,popular}]), VS en curso (cur), siguiente no popular (np) y ESTADISTICAS por VS. Clave pesada: 1 PUT / 5 s
+  cluss.gifts              PUT        mediano         SI            catalogo de regalos por monedas, habilitacion individual y rotacion en el cuadro de honor.
   cluss.stats              PUT        mediano         SI            torneos, rondas, menciones de clubes y indice de logs. Clave pesada: 1 PUT / 5 s
   cluss.libreVotes         PUT        mediano         SI            votos del Torneo Libre: sal, totales, ronda actual, historial (max 500 rondas) y huellas de usuarios unicos. Clave pesada: 1 PUT / 5 s
   cluss.log.<idRonda>      PUT        hasta ~300 KB   NO            log completo de UNA ronda con regalos (regalos + hasta 1500 mensajes). Se escribe y se libera de RAM. El cliente pide DELETE de los logs viejos (quedan los ultimos 15); el servidor puede conservarlos igual.
@@ -250,7 +250,7 @@
   - TikTok: usuario guardado por POST /api/connect > TIKTOK_USERNAME > d4n1el325. Se usa tiktok-live-connector; solo los seis tipos
     permitidos se emiten. Los regalos en combo emiten el delta nuevo de repeatCount y el cliente no recibe el campo bot.
   - Estado: archivos JSON atomicos bajo data/state; las claves aceptadas son cluss.v1, cluss.torneoLock, cluss.lang,
-    cluss.crest.<id>, cluss.vs, cluss.fans, cluss.stats, cluss.libreVotes, cluss.chatArchive y cluss.log.<id>.
+    cluss.crest.<id>, cluss.vs, cluss.gifts, cluss.stats, cluss.libreVotes, cluss.chatArchive y cluss.log.<id>.
     GET /api/state.js incluye todos salvo cluss.log.*; cada valor se guarda tal cual y GET individual responde 404 si no existe.
   - Logs: data/logs/<flujo>.jsonl, append-only y lotes de maximo 200. chat-texts conserva solo [timestamp_ms,texto], sin autor.
     user-events conserva u, name, t, type y los campos n/text/gift permitidos; ambos flujos tienen retencion configurable de 1 a 90 dias
@@ -353,8 +353,8 @@ Las reglas marcadas (propuesto) aun no estan confirmadas por el autor. [REVISAR]
  15. AVISOS DE MAXIMO 3 s (v16, id aviso-cuenta, al final): ninguna ventana emergente (banner, aviso, tarjeta de regalo, logro, hype) dura mas de 3 s y todas muestran un contador regresivo en segundos (3, 2, 1) en su esquina. La tarjeta de regalo dura 2,6 s (+0,4 s de salida). Solo informa; nunca pide acciones (regla 1).
  16. RECTA FINAL SIN VENTANAS (v17, id recta-final-js, al final): desde que la tortuga lider pasa RF=70 % de pista, ninguna ventana emergente (banner, aviso, regalo, logro, hype) se muestra, para ver la pista completa; quedan en espera (maximo 3, las mas recientes) y se muestran una a una DESPUES, al llegar a la meta (fin de ronda). Al empezar una ronda nueva lo pendiente se descarta. Solo informa; nunca pide acciones (regla 1).
  17. VOZ POR PRIORIDAD Y METROS (v18, id voz-prioridad-js, al final): orden: 1 agradecer cada regalo y alerta alegre desde 1 diamante; 2 anunciar cambios de equipo; 3 leer comentarios; 4 agradecer acciones/saludar; 5 narrar el avance y lo que falta para la meta. Tabla: server/voice-priority.js -> GET /api/voice-priority. La pista se mide en METROS: la meta esta a 100 m (1 punto de pista = 1 m). Nunca pide acciones (regla 1).
- 18. VS EN BUCLE + LISTA EN EL BACK + ESTADISTICAS POR VS (v19, ids vs-motor / vs-motor-js, al final): cada VS se repite (serie tras serie) mientras haya interaccion; cuando la cuenta regresiva de inactividad llega a 0 se salta al SIGUIENTE VS HABILITADO de la lista (al terminar la lista vuelve al clasico). La lista (habilitar/deshabilitar) y las estadisticas viven en el servidor: clave cluss.vs (ver tabla de claves). Valor por evento real: miembro 1, comentario 5, like 1 c/u, seguir 3, compartir 3, regalo 10; ranking = valor por ronda. Historial 'sin eventos' = VS jugados sin ningun evento (no entran los que tienen copas). Copas por VS = suma de P.cl. Boton 🆚 abre el panel (Lista / Interaccion / Sin eventos / Copas). Los bots no cuentan. Nunca pide acciones (regla 1).
- 19. HINCHAS POR CARRERA BAJO CADA COPA (v20, ids fans-copas / fans-copas-js, al final): en el cuadro de copas (#copas) cada tarjeta de club muestra, debajo del numero de copas, un icono de hinchas y la cantidad de usuarios unicos con interaccion real asignados a ese club durante la carrera actual. Ambos conteos reinician en cero al iniciar una carrera. Se guarda en el servidor como huellas con sal en cluss.fans (sin nombres). Solo informa; nunca pide acciones (regla 1).
+ 18. VS EN BUCLE + LISTA EN EL BACK + ESTADISTICAS POR VS (v19, ids vs-motor / vs-motor-js, al final): cada VS se repite (serie tras serie) mientras haya interaccion; cuando la cuenta regresiva llega a 0 avanza en tandas: todos los VS habilitados marcados populares y, al final, un solo VS habilitado no popular. Al completar la tanda recarga los populares con el siguiente no popular habilitado. Popularidad y estadisticas viven en cluss.vs. Valor por evento real: miembro 1, comentario 5, like 1 c/u, seguir 3, compartir 3, regalo 10; ranking = valor por ronda. Los bots no cuentan. Nunca pide acciones (regla 1).
+ 19. AUDIENCIA EN COPAS: eliminada del cuadro de copas. Solo se muestra el contador de copas, sin icono ni número de audiencia.
  20. VOZ: CAMBIO DE EQUIPO Y SALUDO AL INGRESAR (v21, dentro de voz-prioridad-js): nivel 'move' = prioridad 1: un hincha que nombra un club ('se une a X') o cambia de uno ('cambio de X a Y') se anuncia en cola (FIFO, maximo 8). Nivel 'welcome' = prioridad 3, saludo 'Bienvenido <usuario>' a cada evento 'member' (una vez; de nuevo si reingresa tras 10 min; maximo 6 en cola). Si el backend (GET /api/voice-priority) no trae esos niveles, el frontend agrega los suyos por defecto. Nunca pide acciones (regla 1).
 11. CONTRATO CON EL BACKEND, REGLAS DE JUEGO Y CHECKLIST DE FUNCIONES: movidos al 'BLOQUE PARA EL DESARROLLADOR DEL BACKEND' (al inicio de este archivo; el desarrollador lo copia a su repo y lo borra de aqui al leerlo).
 
@@ -1244,7 +1244,6 @@ const initialStartRequest=raceStartRequest;
 function releaseInitialRace(){raceStartedAt=performance.now();lastTick=raceStartedAt;raceEndedAt=null;raceReady=true}
 Promise.resolve(window.clussDeploymentReady).then(matches=>{
  if(matches===false||initialStartRequest!==raceStartRequest)return;
- if(window.gamiFans&&typeof window.gamiFans.reset==='function')window.gamiFans.reset();
  releaseInitialRace();
 }).catch(error=>{console.error('No se pudo verificar la firma antes de iniciar la carrera.',error);if(initialStartRequest===raceStartRequest)releaseInitialRace()});
 const newSpeeds=()=>{sp=T.map(()=>0.985+Math.random()*0.03)};newSpeeds();
@@ -2157,7 +2156,6 @@ reset=function(){
  raceReady=false;heartLimitOffset=0;HEART_N=HEART_START;matchInteractionCount=0;lastInteractionAt=Date.now();lowActivityFinished=false;
  const start=()=>{
   if(request!==raceStartRequest)return;
-  if(window.gamiFans&&typeof window.gamiFans.reset==='function')window.gamiFans.reset();
   resetTeamEventTotals();
   _resetTurboLimit.apply(context,args);raceStartedAt=performance.now();raceEndedAt=null;lastTick=raceStartedAt;raceReady=true;
  };
@@ -3597,7 +3595,7 @@ const av=url=>/^https:/.test(url||'')?`<img class="av" alt="" src="${esc(url)}" 
 const rango=n=>n>=10?['👑 LEYENDA','#ff4d6d']:n>=3?['🔥 FANÁTICO','#ff9a1f']:['⭐ HINCHA','#ffd34d'];
 const giftNameKey=value=>String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,60);
 const giftKey=(name,id)=>{const key=giftNameKey(name);return['rose','rosa','rosita','tiktok-rose'].includes(key)?'rose':key||(id?'id-'+giftNameKey(id):'')};
-const defaultGiftConfig={rotationSeconds:10,catalog:[{key:'rose',name:'Rose (Rosita)',value:1,enabled:true,aliases:['rose','rosa','rosita']}]};
+const defaultGiftConfig={rotationSeconds:10,catalog:[{key:'rose',name:'🌹 Rosa',value:1,enabled:true,aliases:['rose','rosa','rosita']}]};
 function normalizeGiftConfig(value){
  const catalog=Array.isArray(value&&value.catalog)?value.catalog:defaultGiftConfig.catalog;
  return{
@@ -3614,7 +3612,7 @@ const giftForEvent=e=>{
 function currentEntries(){return[...C.entries()].filter(([,item])=>giftConfig.catalog.some(gift=>gift.enabled&&gift.key===item.giftKey))}
 function pinta(e){
  if(!e){pd.innerHTML=`<div class="sl s1 vac">${av('')}</div>`;return}
- const tm=(e.t>=0&&T[e.t])?T[e.t]:null,col=tm?(tm.c==='#f1f1f1'?'#e5e5e5':tm.c):'#ffe14d',rg=rango(e.n),gift=giftConfig.catalog.find(item=>item.key===e.giftKey),value=gift&&gift.value?gift.value+' 💎':'valor sin informar';
+ const tm=(e.t>=0&&T[e.t])?T[e.t]:null,col=tm?(tm.c==='#f1f1f1'?'#e5e5e5':tm.c):'#ffe14d',rg=rango(e.n),gift=giftConfig.catalog.find(item=>item.key===e.giftKey),value=gift&&gift.value?gift.value+' 🪙':'valor sin informar';
  let fl='';try{if(tm)fl=`<svg class="hflag" viewBox="0 0 40 26" aria-hidden="true">${flag(tm.id,0,0,40,26)}</svg>`}catch(x){}
  pd.innerHTML=`<div class="sl s1 gm${e.key===hit?' hit':''}" style="--tc:${col}">${fl}<div class="avw">${av(e.url)}</div><div class="tx"><span class="un">@${esc(e.user)}</span>${tm?`<span class="cl">${esc(tm.n)}</span>`:''}<span class="rg" style="--rc:${rg[1]}">${rg[0]}</span><span class="ct">🎁 ${esc(gift&&gift.name||e.giftName)} · ${esc(value)} ×${e.n}</span></div></div>`}
 function rotate(){
@@ -3686,7 +3684,7 @@ function pinta(){try{
   let st;if(!top)st=en?'Go for #1!':'¡A por la 1ª!';else if(tie)st=en?'TIE!':'¡EMPATE!';else if(rk===1)st=en?`LEADER +${gap}`:`¡LÍDER! +${gap}`;else st=en?`${gap} behind`:`a ${gap} 🏆 del líder`;
   const live=act.includes(id);
   const lb=rk===1?(en?'1ST PLACE':'PRIMER PUESTO'):(en?'2ND PLACE':'SEGUNDO PUESTO');
-  return `<div class="cc p${i+1} r${rk}${live?' on':''}${n?'':' z'}${up?' up':''}" data-team-id="${esc(id)}" aria-label="${lb} · ${esc(nom(id))}: ${n}"><span class="cc-lb">${lb}</span><span class="cc-rk">${rk===1?'🥇':'🥈'}</span>${i===0?'<span class="cc-cr">👑</span>':''}${live?`<span class="cc-live" title="${en?'Racing':'En pista'}"></span>`:''}<span class="cc-row"><span class="cc-fl">${ban(id)}</span><span class="cc-n d${String(n).length}">${n}</span></span><span class="cc-fans" data-team-id="${esc(id)}">👥 <b>0</b></span><span class="cc-nm">${esc(nom(id))}</span><span class="cc-bar"><i style="width:${pct}%"></i></span><span class="cc-st">${st}</span>${up?'<b class="cc-plus">+1 🏆</b>':''}</div>`};
+  return `<div class="cc p${i+1} r${rk}${live?' on':''}${n?'':' z'}${up?' up':''}" data-team-id="${esc(id)}" aria-label="${lb} · ${esc(nom(id))}: ${n}"><span class="cc-lb">${lb}</span><span class="cc-rk">${rk===1?'🥇':'🥈'}</span>${i===0?'<span class="cc-cr">👑</span>':''}${live?`<span class="cc-live" title="${en?'Racing':'En pista'}"></span>`:''}<span class="cc-row"><span class="cc-fl">${ban(id)}</span><span class="cc-n d${String(n).length}">${n}</span></span><span class="cc-nm">${esc(nom(id))}</span><span class="cc-bar"><i style="width:${pct}%"></i></span><span class="cc-st">${st}</span>${up?'<b class="cc-plus">+1 🏆</b>':''}</div>`};
  const h=`<div class="hh">🏆 ${en?'CUPS':'COPAS'}${cn?' · '+esc(cn):''}</div>`+a.map(card).join('');
  if(h!==ult){ult=h;box.innerHTML=h;a.forEach(id=>{prev[id]=cp[id]||0})}}catch(e){}}
 setInterval(pinta,1500);pinta();
@@ -5300,7 +5298,7 @@ if(typeof reset==='function'){const _r=reset;reset=function(){const r=_r.apply(t
 window.vozPrioridad={queue:Q,table:()=>TB};
 })();
 </script>
-<!-- ===== v19: ROTACION DE VS, LISTA EN EL BACK Y MOTOR DE ESTADISTICAS POR VS. Cada VS se repite en bucle (serie tras serie) mientras haya interaccion; cuando la cuenta regresiva de inactividad llega a 0 se salta al SIGUIENTE VS habilitado de la lista y al final de la lista se vuelve al clasico. Todo se guarda en el servidor (SRV, clave cluss.vs). Boton 🆚 = panel. Nunca pide acciones (regla 1). ===== -->
+<!-- ===== v19: ROTACION DE VS, LISTA EN EL BACK Y MOTOR DE ESTADISTICAS POR VS. Cada VS se repite en bucle mientras haya interaccion; al llegar a cero avanza por populares y un no popular en rotacion. Todo se guarda en cluss.vs. Boton 🆚 = panel. ===== -->
 <style id="vs-motor">
 #vsp{position:absolute;inset:6px;z-index:60;display:none;flex-direction:column;box-sizing:border-box;border-radius:12px;border:2px solid #ffd34d;background:linear-gradient(#2a1a0a,#120a03);color:#fff;font:700 12px/1.25 Inter,sans-serif;box-shadow:0 0 0 3px rgba(0,0,0,.6),0 10px 30px rgba(0,0,0,.7)}
 #vsp.on{display:flex}
@@ -5326,32 +5324,45 @@ const safe=f=>{try{return f()}catch(e){return undefined}};
 const M=window.liveEventMonitor;
 if(!M||!safe(()=>CLASSIC_DEFS)||!safe(()=>SRV)||!safe(()=>T)||!safe(()=>P))return;
 const K='cluss.vs',key=(a,b)=>[a,b].sort().join('|');
-const STARTER_KEY=key('ol','cp'),STARTER_KEYS=new Set([STARTER_KEY,key('ucl-bc','ucl-rm')]),CONFIG_VERSION=3;
+const STARTER_KEY=key('ol','cp'),STARTER_KEYS=new Set([STARTER_KEY,key('ucl-bc','ucl-rm')]),CONFIG_VERSION=4,LEGACY_CONFIG_VERSION=3;
 const nmOf=id=>{const n=String(safe(()=>tournamentItem(id).n)||id);return n[0]+n.slice(1).toLowerCase()};
-const DEF=CLASSIC_DEFS.map(d=>({k:key(d[0],d[1]),a:d[0],b:d[1],n:d[2],on:STARTER_KEYS.has(key(d[0],d[1]))}));
+const DEF=CLASSIC_DEFS.map(d=>({k:key(d[0],d[1]),a:d[0],b:d[1],n:d[2],on:STARTER_KEYS.has(key(d[0],d[1])),popular:STARTER_KEYS.has(key(d[0],d[1]))}));
 /* ---------- LISTA + ESTADISTICAS (documento del SERVIDOR: GET/PUT /api/state/cluss.vs) ---------- */
 const raw=safe(()=>SRV.get(K,null))||{};
 const hasCurrentConfig=raw.v===CONFIG_VERSION;
-const D={cur:hasCurrentConfig?raw.cur||'':STARTER_KEY,st:(raw.st&&typeof raw.st==='object')?raw.st:{},list:[]};
-(hasCurrentConfig&&Array.isArray(raw.list)?raw.list:[]).forEach(x=>{const d=DEF.find(y=>y.k===x.k);if(d&&!D.list.some(y=>y.k===d.k))D.list.push(Object.assign({},d,{on:x.on!==false}))});
+const hasStoredConfig=hasCurrentConfig||(raw.v===LEGACY_CONFIG_VERSION&&Array.isArray(raw.list));
+const D={cur:hasStoredConfig?raw.cur||'':STARTER_KEY,np:hasCurrentConfig&&typeof raw.np==='string'?raw.np:'',st:(raw.st&&typeof raw.st==='object')?raw.st:{},list:[]};
+(hasStoredConfig&&Array.isArray(raw.list)?raw.list:[]).forEach(x=>{const d=DEF.find(y=>y.k===x.k);if(d&&!D.list.some(y=>y.k===d.k))D.list.push(Object.assign({},d,{on:x.on!==false,popular:hasCurrentConfig?x.popular===true:STARTER_KEYS.has(x.k)}))});
 DEF.forEach(d=>{if(!D.list.some(y=>y.k===d.k))D.list.push(Object.assign({},d))}); /* VS nuevos al final */
-const save=()=>safe(()=>SRV.set(K,{v:CONFIG_VERSION,cur:D.cur,list:D.list.map(x=>({k:x.k,on:x.on})),st:D.st}));
+const save=()=>safe(()=>SRV.set(K,{v:CONFIG_VERSION,cur:D.cur,np:D.np,list:D.list.map(x=>({k:x.k,on:x.on,popular:x.popular})),st:D.st}));
 const byKey=k=>D.list.find(x=>x.k===k);
 const en=()=>D.list.filter(x=>x.on);
 const duelKey=()=>key(T[0].id,T[1].id);
 if(!byKey(D.cur)){const here=byKey(duelKey());D.cur=here?here.k:(en()[0]||D.list[0]).k}
 if(!hasCurrentConfig)save();
-function advance(){ /* siguiente VS HABILITADO de la lista; al final vuelve al primero (el clasico) */
- const n=D.list.length,p=Math.max(0,D.list.findIndex(x=>x.k===D.cur));
- for(let i=1;i<=n;i++){const x=D.list[(p+i)%n];if(x.on)return x.k}
- return D.cur;
+function rotationList(){
+ const popular=D.list.filter(x=>x.on&&x.popular),others=D.list.filter(x=>x.on&&!x.popular);
+ let next=others.find(x=>x.k===D.np);
+ if(!next&&others.length){const current=others.find(x=>x.k===D.cur);next=current||others[0];D.np=next.k}
+ return popular.concat(next?[next]:[]);
+}
+function advance(){
+ const list=rotationList();if(!list.length)return D.cur;
+ const p=list.findIndex(x=>x.k===D.cur);
+ if(p<0)return list[0].k;
+ if(p<list.length-1)return list[p+1].k;
+ const others=D.list.filter(x=>x.on&&!x.popular);
+ if(others.length>1){const i=others.findIndex(x=>x.k===D.np);D.np=others[(i+1+others.length)%others.length].k}
+ const next=rotationList();
+ return next.length?next[0].k:D.cur;
 }
 const curVS=()=>byKey(D.cur)||null; /* el VS actual se conserva hasta que la inactividad llegue a cero */
 window.addEventListener('vs-config-update',event=>{
- const enabledKeys=event.detail&&event.detail.enabledKeys;
+ const detail=event.detail||{},enabledKeys=detail.enabledKeys,popularKeys=detail.popularKeys;
  if(!Array.isArray(enabledKeys))return;
  const enabled=new Set(enabledKeys);
- D.list.forEach(item=>{item.on=enabled.has(item.k)});
+ const popular=Array.isArray(popularKeys)?new Set(popularKeys):null;
+ D.list.forEach(item=>{item.on=enabled.has(item.k);if(popular)item.popular=popular.has(item.k)});
  save();render();
 });
 /* ---------- MOTOR DE ESTADISTICAS: valor de interaccion de cada VS ---------- */
@@ -5373,7 +5384,7 @@ if(typeof _cr==='function')M.completeRound=function(w){
   s.r+=1;s.ev+=R.ev;s.val+=R.val;if(!R.ev)s.empty+=1;s.last=Date.now();
   Object.keys(R.by).forEach(id=>{s.by[id]=(s.by[id]||0)+R.by[id]});
   s.win[w]=(s.win[w]||0)+1;
-  if(idle&&k===D.cur){const nx=advance();if(nx!==D.cur){D.cur=nx;idleJump=true}} /* contador de inactividad en 0: salta al siguiente VS */
+  if(idle&&k===D.cur){const nx=advance();if(nx!==D.cur)D.cur=nx;idleJump=D.list.some(item=>item.on)} /* la inactividad completa una carrera y avanza la rotacion */
   save();render();
  });
  return r;
@@ -5406,8 +5417,8 @@ function render(){
  pn.querySelectorAll('nav button').forEach(b=>b.classList.toggle('a',b.dataset.t===view));
  let h='';
  if(view==='l'){
-  h='<div class="hint">Se repite el VS en curso mientras haya interacción; al llegar a 0 la cuenta de inactividad pasa al siguiente VS habilitado.</div>';
-  D.list.forEach((x,i)=>{h+='<div class="r"><button class="sw'+(x.on?' on':'')+'" data-k="'+x.k+'" aria-label="habilitar"></button><span class="n'+(x.k===D.cur?' cur':'')+'">'+(i+1)+'. '+lbl(x)+(x.k===D.cur?' ◀ en curso':'')+'</span></div>'});
+  h='<div class="hint">Se repite el VS en curso mientras haya interacción. Al llegar a 0 avanza por populares y luego por el siguiente no popular.</div>';
+  D.list.forEach((x,i)=>{h+='<div class="r"><button class="sw'+(x.on?' on':'')+'" data-k="'+x.k+'" aria-label="habilitar"></button><span class="n'+(x.k===D.cur?' cur':'')+'">'+(i+1)+'. '+lbl(x)+(x.popular?' · Popular':'')+(x.k===D.cur?' ◀ en curso':'')+'</span></div>'});
  }else if(view==='i'){
   const a=D.list.filter(x=>D.st[x.k]&&D.st[x.k].r).sort((p,q)=>per(q)-per(p));
   h=a.length?'':'<div class="hint">Aún no hay partidos registrados.</div>';
@@ -5434,64 +5445,6 @@ pn.addEventListener('click',e=>{
 if(foot){const bt=document.createElement('button');bt.className='sm';bt.id='bVs';bt.type='button';bt.textContent='🆚';bt.title='VS: lista, interacción y copas';
  bt.onclick=()=>{pn.classList.toggle('on');render()};foot.appendChild(bt)}
 window.gamiVS={data:D,advance,curVS};
-})();
-</script>
-<!-- ===== v20: FANS POR EQUIPO bajo cada copa. Icono de hinchas + numero debajo del conteo de copas de cada club. Fan = usuario REAL con una interaccion (comentario, like, regalo, seguir o compartir; 'member' no cuenta) asignado a ese equipo durante la carrera actual. El conteo empieza en cero al comenzar cada carrera y se guarda como huellas con sal (cluss.fans), sin nombres. Solo informa; nunca pide acciones (regla 1). ===== -->
-<style id="fans-copas">
-#copas .cc-fans{display:flex;align-items:center;justify-content:center;gap:3px;margin-top:1px;font:900 12px/1 Inter,sans-serif;color:#d9ecff;text-shadow:0 1px 2px #000;font-variant-numeric:tabular-nums;white-space:nowrap}
-#copas .cc-fans svg{flex:none;width:19px;height:13px;fill:currentColor;filter:drop-shadow(0 1px 1px rgba(0,0,0,.7))}
-#copas .cc-fans.top{color:#ffe14d}
-#copas .cc-fans.top:after{content:"▲";font-size:8px;margin-left:1px}
-</style>
-<script id="fans-copas-js">
-(function(){
-'use strict';
-const safe=f=>{try{return f()}catch(e){return undefined}};
-const M=window.liveEventMonitor;
-if(!M||!safe(()=>SRV)||!safe(()=>T))return;
-const K='cluss.fans';
-const SALT='cluss-fans-v2';
-const hash=u=>{let h=2166136261;const s=SALT+u;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)}return(h>>>0).toString(36)}; /* huella: no se guarda el nombre */
-const fans={};   /* id de club -> {huella: evento real de esta carrera} */
-const count=id=>Object.keys(fans[id]||{}).length;
-let dirty=false;
-function save(){if(!dirty)return;dirty=false;const c={};
- Object.keys(fans).forEach(id=>{if(Object.keys(fans[id]).length)c[id]=Object.assign({},fans[id])});
- safe(()=>SRV.set(K,{v:2,c}))}
-setInterval(save,5000);
-function resetFans(){Object.keys(fans).forEach(id=>delete fans[id]);dirty=true;save();paint()}
-/* evento REAL -> fan activo del club al que el motor lo asigno (los bots y los 'member' no cuentan) */
-function onEvent(e){
- if(!e||e.bot||!['chat','gift','like','follow','share'].includes(e.type))return;
- const u=String(e.username||'').trim().toLowerCase();if(!u)return;
- const kn=safe(()=>window.__known.get(u));
- const t=kn&&Number.isInteger(kn.t)?kn.t:safe(()=>window.resolveSupportTeamFor(u));
- const id=Number.isInteger(t)&&T[t]?T[t].id:'';
- if(!id)return;
- (fans[id]||(fans[id]={}))[hash(u)]=Date.now();dirty=true;paint();
-}
-const _rx=M.receive;if(typeof _rx==='function')M.receive=function(e){const r=_rx.apply(this,arguments);safe(()=>onEvent(e));return r};
-/* icono de hinchas (dos figuras) + numero, debajo de la cuenta de copas de cada tarjeta */
-const ICON='<svg viewBox="0 0 24 16" aria-hidden="true"><circle cx="8" cy="4.6" r="3.1"/><path d="M1.5 15.5c0-3.7 2.9-6.2 6.5-6.2s6.5 2.5 6.5 6.2z"/><circle cx="17.2" cy="5.8" r="2.5"/><path d="M13.6 15.5c.2-2.7 1.9-4.7 4.4-4.7 2.6 0 4.4 2 4.5 4.7z"/></svg>';
-function paint(){
- const box=document.getElementById('copas');if(!box)return;
- const ids=new Set(T.map(team=>team.id));
- const rows=[];
- box.querySelectorAll('.cc-fans').forEach(el=>{
-  const id=el.dataset.teamId;if(!ids.has(id))return;
-  rows.push({el,n:count(id)});
- });
- const mx=Math.max(0,...rows.map(r=>r.n)),lead=rows.filter(r=>r.n===mx).length===1&&mx>0; /* se resalta solo si hay un lider claro */
- rows.forEach(r=>{
-  const html=ICON+'<b>'+r.n+'</b>';if(r.el.dataset.v!==html){r.el.dataset.v=html;r.el.innerHTML=html}
-  r.el.title='Audiencia: usuarios únicos con interacción en esta carrera';r.el.setAttribute('aria-label',r.el.title+': '+r.n);
-  r.el.classList.toggle('top',lead&&r.n===mx);
- });
-}
-setInterval(paint,1000); /* el cuadro de copas se redibuja solo: se vuelve a colocar */
-const box=document.getElementById('copas');if(box&&window.MutationObserver)new MutationObserver(paint).observe(box,{childList:true});
-window.gamiFans={count,fans,reset:resetFans};
-resetFans();
 })();
 </script>
 </body>

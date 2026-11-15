@@ -84,7 +84,7 @@
   F16 HERRAMIENTAS DEL JUEGO: guardar cronometro y contador de regalos; cada regalo incrementa el contador; el boton reset reinicia ambos; aceptar SOLO comandos de una lista permitida y pasarlos al overlay activo.
   F17 SENAL DEL OVERLAY: recibir la visibilidad del frontend; activo = senal visible en los ultimos 90 s; revisar cada 15 s.
   F18 WHATSAPP: avisar cuando el overlay pasa de activo a inactivo y por cada evento de regalo, solo si las alertas estan habilitadas y configuradas.
-  F19 REGISTROS: recibir lotes de hasta 200; guardar los textos de chat SIN autor; retener los eventos con nombres hasta 90 dias; guardar huellas de fans activos (con sal, sin nombres) en cluss.fans.
+  F19 REGISTROS: recibir lotes de hasta 200; guardar los textos de chat SIN autor; retener los eventos con nombres hasta 90 dias.
   F20 RUTAS EXTRA: GET /api/voice-priority (tabla de voz; el frontend agrega los niveles que falten), GET /manifest.webmanifest, GET /sw.js y el panel en /backend.
   PROHIBIDO PARA EL SERVIDOR: inventar, duplicar o simular usuarios, comentarios, likes o regalos; decidir puntajes, ganadores o cuadro; enviar tipos de evento fuera de la lista de seis.
   [REVISAR] Falta confirmar con el codigo del servidor: el resto de 'Persistencia y registros' (la fila fuente venia cortada), el formato exacto de los documentos de estado y la lista de comandos permitidos (F16).
@@ -201,8 +201,8 @@
   cluss.torneoLock         PUT        string          SI            "libre" | "auto" | id de torneo fijo elegido con el boton 🔒
   cluss.lang               PUT        chico           SI            idioma del relator por torneo {libre:"es",champions:"en",...}
   cluss.crest.<id>         PUT        string (URL)    SI            cache de la URL del escudo encontrada en Wikipedia
-  cluss.vs                 PUT        mediano         SI            LISTA DE VS (habilitar/deshabilitar: [{k,on}] en orden de rotacion), VS en curso (cur) y ESTADISTICAS por VS (rondas, eventos, valor, vacias, por equipo, ganadores). Clave pesada: 1 PUT / 5 s
-  cluss.fans               PUT        chico           SI            FANS ACTIVOS por club: {v,active_ms,c:{idClub:{huella:ultimaInteraccionMs}}}. Solo huellas con sal (no nombres). Clave pesada: 1 PUT / 5 s
+  cluss.vs                 PUT        mediano         SI            LISTA DE VS (habilitar y marcar populares: [{k,on,popular}]), VS en curso (cur), siguiente no popular (np) y ESTADISTICAS por VS. Clave pesada: 1 PUT / 5 s
+  cluss.gifts              PUT        mediano         SI            catalogo de regalos con nombre, valor en monedas, habilitados y tiempo de rotacion.
   cluss.stats              PUT        mediano         SI            torneos, rondas, menciones de clubes y indice de logs. Clave pesada: 1 PUT / 5 s
   cluss.libreVotes         PUT        mediano         SI            votos del Torneo Libre: sal, totales, ronda actual, historial (max 500 rondas) y huellas de usuarios unicos. Clave pesada: 1 PUT / 5 s
   cluss.log.<idRonda>      PUT        hasta ~300 KB   NO            log completo de UNA ronda con regalos (regalos + hasta 1500 mensajes). Se escribe y se libera de RAM. El cliente pide DELETE de los logs viejos (quedan los ultimos 15); el servidor puede conservarlos igual.
@@ -249,7 +249,7 @@
   - TikTok: usuario guardado por POST /api/connect > TIKTOK_USERNAME > d4n1el325. Se usa tiktok-live-connector; solo los seis tipos
     permitidos se emiten. Los regalos en combo emiten el delta nuevo de repeatCount y el cliente no recibe el campo bot.
   - Estado: archivos JSON atomicos bajo data/state; las claves aceptadas son cluss.v1, cluss.torneoLock, cluss.lang,
-    cluss.crest.<id>, cluss.vs, cluss.fans, cluss.stats, cluss.libreVotes, cluss.chatArchive y cluss.log.<id>.
+    cluss.crest.<id>, cluss.vs, cluss.gifts, cluss.stats, cluss.libreVotes, cluss.chatArchive y cluss.log.<id>.
     GET /api/state.js incluye todos salvo cluss.log.*; cada valor se guarda tal cual y GET individual responde 404 si no existe.
   - Logs: data/logs/<flujo>.jsonl, append-only y lotes de maximo 200. chat-texts conserva solo [timestamp_ms,texto], sin autor.
     user-events conserva u, name, t, type y los campos n/text/gift permitidos; ambos flujos tienen retencion configurable de 1 a 90 dias
